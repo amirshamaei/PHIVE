@@ -1,3 +1,5 @@
+import random
+
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
@@ -5,6 +7,7 @@ import math
 import numpy as np
 import scipy.io as sio
 import torchmetrics
+from torch.func import jacfwd
 from torchmetrics import R2Score, PearsonCorrCoef
 from torch import Tensor
 import seaborn as sns
@@ -20,8 +23,9 @@ from torchcubicspline import(natural_cubic_spline_coeffs,
                              NaturalCubicSpline)
 
 class Encoder_Model(pl.LightningModule):
-    def __init__(self,depth, beta, tr_wei, param):
+    def __init__(self,depth, beta, tr_wei, i,param):
         super().__init__()
+        self.ens_indx = i
         self.save_hyperparameters()
         self.validation_step_outputs = []
         self.training_step_outputs = []
@@ -31,7 +35,7 @@ class Encoder_Model(pl.LightningModule):
         self.t = torch.from_numpy(param.t).float().cuda(self.param.parameters['gpu'])[0:self.param.org_truncSigLen]
         self.sw = 1/param.t_step
         self.basis = torch.from_numpy(param.basisset[:self.param.org_truncSigLen, 0:param.numOfSig].astype('complex64')).cuda(self.param.parameters['gpu'])
-        self.criterion = torch.nn.MSELoss(reduction='sum')
+        self.criterion = torch.nn.MSELoss(reduction='mean')
         self.beta = nn.Parameter(torch.tensor(beta), requires_grad=False).cuda(self.param.parameters['gpu'])
         # self.r2 = torchmetrics.R2Score(adjusted=True)
         if self.param.MM_constr == True :
@@ -47,8 +51,8 @@ class Encoder_Model(pl.LightningModule):
         # self.mult_factor = 2
         if self.param.MM == True :
             if self.param.MM_type == 'single' or self.param.MM_type == 'single_param':
-                self.enc_out =  1 * (param.numOfSig+1) + 3 + 1
-                self.mm = torch.from_numpy(param.mm[0:2048].astype('complex64')).cuda(self.param.parameters['gpu']).T
+                self.enc_out =  1 * (param.numOfSig) + 4 +3 # numof metabolite + parameters + MM parameters
+                self.mm = torch.from_numpy(param.mm[:self.param.org_truncSigLen,:].astype('complex64')).cuda(self.param.parameters['gpu']).T
             if self.param.MM_type == 'param':
                 if self.param.MM_fd_constr == False:
                     self.enc_out =  (1* (self.param.numOfSig)+self.param.numOfMM*3 + 3 + (self.param.numOfMM))
@@ -60,13 +64,11 @@ class Encoder_Model(pl.LightningModule):
         if self.param.MM_constr == True:
             self.enc_out += 1
 
-        if self.beta != 0:
-            self.enc_out_ = 2 * self.enc_out
-        else:
-            self.enc_out_ = self.enc_out
 
         if self.param.parameters['spline']:
-            self.enc_out_ = self.enc_out_ + self.param.parameters['numofsplines']
+            self.enc_out = self.enc_out + self.param.parameters['numofsplines']
+
+
         try:
             self.dropout = param.parameters['dropout']
         except:
@@ -77,13 +79,25 @@ class Encoder_Model(pl.LightningModule):
         else:
             self.in_chanel = 2
 
+
+        if self.beta != 0:
+            self.enc_out_ = 2 * self.enc_out
+        else:
+            self.enc_out_ = self.enc_out
+
+        # self.embed = nn.Embedding(2, 128,_freeze=False)
+        # self.cond_max = 2
+        # self.embed = []
+        # for i in range(self.cond_max):
+        #     self.embed.append(nn.Linear(self.param.parameters['numofsplines'],self.param.parameters['numofsplines']).cuda(self.param.parameters['gpu']))
+        # self.one_hot = torch.eye(self.cond_max,requires_grad=False).cuda(self.param.parameters['gpu'])
         if param.enc_type == 'conv':
             self.met = ConvNet_ENC(in_chanel=self.in_chanel,latent_Size=self.enc_out_, dropout=self.dropout,freeze_enc=self.param.parameters["freeze_enc"])
             if param.parameters['decode'] == True:
                 self.decode = ConvNet_DEC(out_chanel=self.in_chanel,dropout=self.dropout, freeze_dec=self.param.parameters["freeze_dec"])
         if param.enc_type == 'trans':
             # self.met = Transformer(insize=self.in_size,outsize=self.enc_out_)
-            self.met = TransformerB(in_channels=1, out_channels=128, num_heads=8, hidden_size=256, num_layers=8,outsize=self.enc_out_)
+            self.met = TransformerB(in_channels=1, out_channels=512, num_heads=4, hidden_size=128, num_layers=2,outsize=self.enc_out_)
             if param.parameters['decode'] == True:
                 self.decode = ConvNet_DEC(out_chanel=self.in_chanel, dropout=self.dropout,
                                           freeze_dec=self.param.parameters["freeze_dec"])
@@ -102,6 +116,8 @@ class Encoder_Model(pl.LightningModule):
             self.p1 = int(self.param.ppm2p(self.param.parameters['fbound'][2], (self.param.truncSigLen)))
             self.p2 = int(self.param.ppm2p(self.param.parameters['fbound'][1], (self.param.truncSigLen)))
             self.in_size = int(self.p2-self.p1)
+
+
 
     def sign(self,t,eps):
         return (t/torch.sqrt(t**2+ eps))
@@ -137,9 +153,9 @@ class Encoder_Model(pl.LightningModule):
         fr = torch.unsqueeze(enc[:, -3],1)
         damp = torch.unsqueeze(enc[:, -2],1)
         ph = torch.unsqueeze(enc[:, -1],1)
-        ample_met = self.act(enc[:, 0:(self.param.numOfSig)])
+        ample_met = torch.nn.functional.relu(enc[:, 0:(self.param.numOfSig)])
 
-        ample_MM = self.act(enc[:, (self.param.numOfSig):(self.param.numOfSig)+self.param.numOfMM])
+        ample_MM = torch.nn.functional.relu(enc[:, (self.param.numOfSig):(self.param.numOfSig)+self.param.numOfMM])
         mm_f = enc[:, (self.param.numOfSig)+self.param.numOfMM:(self.param.numOfSig)+self.param.numOfMM*2]
         mm_phase = enc[:, (self.param.numOfSig)+self.param.numOfMM*2:(self.param.numOfSig)+self.param.numOfMM*3]
         mm_damp = enc[:, (self.param.numOfSig)+self.param.numOfMM*3:(self.param.numOfSig)+self.param.numOfMM*4]
@@ -149,13 +165,14 @@ class Encoder_Model(pl.LightningModule):
             spline_coeff = enc[:,
                       (self.param.numOfSig) + self.param.numOfMM * 4:self.param.parameters['numofsplines']+(self.param.numOfSig) + self.param.numOfMM * 4]
         return fr, damp,ph,ample_met,ample_MM,mm_f,mm_damp, mm_phase,spline_coeff
-    def lc(self,enc):
-        params = self.get_model_parameters(enc)
+    def lc(self,fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase):
+        # params = self.get_model_parameters(enc)
         if self.param.MM:
-            out=(self.lc_met(*params)+ self.lc_mm(*params)).real
+            out=(self.lc_met(fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase)
+                 + self.lc_mm(fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase)).real
         else:
-            out=self.lc_met(*params)
-        return out
+            out=self.lc_met(fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase)
+        return out.real
     def lc_met(self,fr, damp,ph,ample_met,ample_MM,mm_f,mm_damp, mm_phase):
         sSignal = torch.matmul(ample_met[:, 0:(self.param.numOfSig)] + 0 * 1j, self.basis.T)
         dec = torch.multiply(sSignal, torch.exp(-2 * math.pi * (fr) * self.t.T * 1j))
@@ -166,10 +183,10 @@ class Encoder_Model(pl.LightningModule):
         if (self.param.MM == True):
             if self.param.MM_type == 'single' or self.param.MM_type == 'single_param':
                 mm_enc = (ample_MM)
-                mm_rec = (mm_enc[:].unsqueeze(1)) * self.mm
-                mm_rec = torch.multiply(mm_rec, torch.exp(-2 * math.pi * (fr) * self.t.T * 1j))
-                mm_rec = torch.multiply(mm_rec, torch.exp((-1 * damp) * self.t.T))
-                mm_rec = mm_rec * torch.exp(ph * 1j)
+                mm_rec = (mm_enc[:]) * self.mm
+                mm_rec = torch.multiply(mm_rec, torch.exp(-2 * math.pi * (mm_f) * self.t.T * 1j))
+                mm_rec = torch.multiply(mm_rec, torch.exp((-1 * mm_damp) * self.t.T))
+                mm_rec = mm_rec * torch.exp(mm_phase * 1j)
             if self.param.MM_type == 'param':
                 mm_rec = 0
                 if self.param.MM_fd_constr == False:
@@ -188,15 +205,23 @@ class Encoder_Model(pl.LightningModule):
                     mm_rec = torch.conj(mm_rec)
 
         return mm_rec
-    def forward(self, x):
+    def forward(self, x, cond = 0):
         decoded = self.param.inputSig(x)
 
-        enct, latent = self.met(decoded)
-        # enc = self.reparameterize(enct[:, 0:self.param.numOfSig],
-        #                           enct[:, self.param.numOfSig:2*(self.param.numOfSig)])
+        latent = self.met(decoded)
+
+        # embed_cond = self.embed.weight[cond]
+        # embed_cond = self.one_hot[cond]
+        # enct = self.met.regres(torch.concatenate([latent.flatten(1),embed_cond.unsqueeze(0).repeat(x.shape[0],1)],1))
+        enct = self.met.regres(latent)
         if self.beta != 0:
+            soft_0 = self.act(enct[:, 0:self.param.numOfSig+self.param.numOfMM])
+            soft_1 = (enct[:, self.enc_out:self.enc_out+self.param.numOfSig+self.param.numOfMM])
+            enct = torch.concatenate(([soft_0,(enct[:, self.param.numOfSig+self.param.numOfMM:self.enc_out]),soft_1,(enct[:, self.enc_out+self.param.numOfSig+self.param.numOfMM:])]),1)
             enc = self.reparameterize(enct[:, 0:self.enc_out],enct[:, self.enc_out:2*(self.enc_out)])
         else:
+            soft_0 = self.act(enct[:, 0:self.param.numOfSig+self.param.numOfMM])
+            enct = torch.concatenate(([soft_0,(enct[:, self.param.numOfSig+self.param.numOfMM:self.enc_out])]),1)
             enc = enct
         # enc = torch.cat((enc,enct[:, 2*(self.param.numOfSig):]),dim=1)
 
@@ -238,7 +263,7 @@ class Encoder_Model(pl.LightningModule):
         recons = args[0]
         input = args[1]
         mu = args[2]
-        log_var = args[3]
+        std = args[3]
         mm = args[4]
         decoded = args[5]
         ampl_p = args[6]
@@ -296,19 +321,22 @@ class Encoder_Model(pl.LightningModule):
                 div_fac = 2
             recons_loss = (loss_real+loss_imag)/div_fac
         self.log("recons_loss", recons_loss)
-        spline_loss=torch.norm(spline_coeff)
-        self.log("spline_loss", spline_loss)
-        loss = met_loss + recons_loss + self.param.parameters['spline_reg']*spline_loss
+        spline_loss=torch.linalg.vector_norm(spline_coeff[:,:-1]-spline_coeff[:,1:])#
+        self.log("spline_loss", spline_loss)#self.param.parameters['spline_reg']*
+        loss = met_loss + recons_loss + self.param.parameters['spline_reg'][self.ens_indx]*spline_loss#/(spline_coeff.shape[0]/32)
 
         if self.beta!=0:
             # - mu ** 2
             # kld_loss = torch.mean(-0.5 * torch.sum(-1+log_var-np.log(1e-5)+((1e-5)/log_var.exp()), dim=1), dim=0)
-            kld_loss = torch.mean(-0.5 * torch.sum(-1 + log_var, dim=1), dim=0)
-            # kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - log_var.exp(), dim=1), dim=0)
+            # var = std**2
+            # kld_loss = torch.mean(-0.5 * torch.sum(-1 + torch.log(var) - var, dim=1), dim=0)
+            kld_loss = torch.mean(-0.5 * torch.sum(1 + std - std.exp(), dim=1), dim=0)
             self.log("nll_los", kld_loss)
+            # self.log("nll_los", kld_loss)
             beta_func = self.sigmoid(torch.tensor(self.global_step),1/2500,(1 * self.param.beta_step))
             # beta_func = torch.sigmoid((-10 + torch.tensor(self.global_step / (1 * self.param.beta_step)))*2)
             self.log("beta",beta_func * self.beta)
+            beta_func=1
             loss =  loss + beta_func * self.beta * kld_loss
         if self.param.parameters["decode"] == True:
             if self.param.parameters['fbound'][0]:
@@ -351,13 +379,14 @@ class Encoder_Model(pl.LightningModule):
             x, label = batch[0],batch[1]
             ampl_batch, alpha_batch = label[:, 0:-1], label[:, -1]
 
+        # cond = random.randint(0,self.cond_max-1)
         dec_real, enct, enc,_,damp,_,mm,dec,decoded,b_spline_rec,spline_coeff = self(x)
-
+        # self.param.parameters['spline_reg'] = cond
         # mu = enct[:, 0:self.param.numOfSig]
         # logvar = enct[:, self.param.numOfSig:2*(self.param.numOfSig)]
         mu = enct[:, 0:self.enc_out]
         logvar = enct[:, self.enc_out:2*(self.enc_out)]
-        loss_mse,recons_loss = [lo/len(x) for lo in self.loss_function(dec, x, mu,logvar,mm,decoded,ampl_batch,enc,b_spline_rec,spline_coeff)]
+        loss_mse,recons_loss = self.loss_function(dec, x, mu,logvar,mm,decoded,ampl_batch,enc,b_spline_rec,spline_coeff)
         self.training_step_outputs.append(loss_mse)
         self.log('damp',damp.mean())
         return {'loss': loss_mse,'recons_loss':recons_loss}
@@ -379,82 +408,94 @@ class Encoder_Model(pl.LightningModule):
             # r2 = 1-(torch.sum(error**2,dim=0)/torch.sum(stot**2,dim=0))
 
         results = self.training_step(batch, batch_idx)
-        if (self.current_epoch % self.param.parameters['val_freq'] == 0 and batch_idx == 0):
-            id = int(np.random.rand() * 300)
-            # id=150
-            # sns.scatterplot(x=alpha_batch.cpu(), y=error.cpu())
-            # sns.scatterplot(x=10*ampl_batch[:,12].cpu(),y=10*enc[:,12].cpu())
-            # # plt.title(str(r2))
-            # plt.show()
-            # ampl_t = min_c + np.multiply(np.random.random(size=(1, 21)), (max_c - max_c))
-            # y_n, y_wn = getSignal(ampl_t, 0, 5, 0, 0.5)
-            rang = [1.8, 4]
-            # id= 10
-            # plotppm(np.fft.fftshift(np.fft.fft((y_n.T)).T), 0, 5,False, linewidth=0.3, linestyle='-')
-            p1 = int(self.param.ppm2p(rang[0], (self.param.y_test_trun.shape[1])))
-            p2 = int(self.param.ppm2p(rang[1], (self.param.y_test_trun.shape[1])))
-            self.param.plotppm(np.fft.fftshift(np.fft.fft((self.param.y_test_trun[id, :])).T)[p2:p1], rang[0], rang[1], False, linewidth=0.3, linestyle='-',label="y_test")
-            # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(y_trun[id, :])).T)[250:450], linewidth=0.3)
-            rec_signal,_,enc, fr, damp, ph,mm_v,_,decoded, spline_rec,_ = self(torch.unsqueeze(self.param.y_test_trun[id, :], 0).cuda())
-            # plotppm(np.fft.fftshift(np.fft.fft(((rec_signal).cpu().detach().numpy()[0,0:truncSigLen])).T), 0, 5,False, linewidth=1, linestyle='--')
-            if self.param.parameters["decode"] == True:
-                if self.param.in_shape == 'real':
-                    decoded = decoded[:,0,:]
-                    self.param.plotppm(40+np.fft.fftshift(np.fft.rfft(
-                        (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
-                            True, linewidth=1, linestyle='--',label="decoded")
-                else:
-                    decoded = decoded[:,0,:] + decoded[:,1,:]*1j
-                    self.param.plotppm(40+np.fft.fftshift(np.fft.fft(
-                        (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
-                            True, linewidth=1, linestyle='--',label="decoded")
-            rec_sig = rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen]
+        try:
+            if (self.current_epoch % self.param.parameters['val_freq'] == 0 and batch_idx == 0):
+                # id = int(np.random.rand() * 300)
+                id=150
+                # sns.scatterplot(x=alpha_batch.cpu(), y=error.cpu())
+                # sns.scatterplot(x=10*ampl_batch[:,12].cpu(),y=10*enc[:,12].cpu())
+                # # plt.title(str(r2))
+                # plt.show()
+                # ampl_t = min_c + np.multiply(np.random.random(size=(1, 21)), (max_c - max_c))
+                # y_n, y_wn = getSignal(ampl_t, 0, 5, 0, 0.5)
+                rang = [1.8, 4]
+                # id= 10
+                # plotppm(np.fft.fftshift(np.fft.fft((y_n.T)).T), 0, 5,False, linewidth=0.3, linestyle='-')
+                p1 = int(self.param.ppm2p(rang[0], (self.param.y_test_trun.shape[1])))
+                p2 = int(self.param.ppm2p(rang[1], (self.param.y_test_trun.shape[1])))
+                self.param.plotppm(np.fft.fftshift(np.fft.fft((self.param.y_test_trun[id, :])).T)[p2:p1], rang[0], rang[1], False, linewidth=0.3, linestyle='-',label="y_test")
+                # cond_ = random.randint(0,self.cond_max-1)
+                # self.param.parameters['spline_reg'] = cond_
+                # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(y_trun[id, :])).T)[250:450], linewidth=0.3)
+                rec_signal,_,enc, fr, damp, ph,mm_v,_,decoded, spline_rec,spline_coeff = self(torch.unsqueeze(self.param.y_test_trun[id, :], 0).cuda())
+                spline_loss = torch.linalg.vector_norm(spline_coeff[:, :-1] - spline_coeff[:, 1:])  #
+                # self.log(f"spline_loss_val_{cond_}", spline_loss)
+                # plotppm(np.fft.fftshift(np.fft.fft(((rec_signal).cpu().detach().numpy()[0,0:truncSigLen])).T), 0, 5,False, linewidth=1, linestyle='--')
+                if self.param.parameters["decode"] == True:
+                    if self.param.in_shape == 'real':
+                        decoded = decoded[:,0,:]
+                        self.param.plotppm(40+np.fft.fftshift(np.fft.rfft(
+                            (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
+                                True, linewidth=1, linestyle='--',label="decoded")
+                    else:
+                        decoded = decoded[:,0,:] + decoded[:,1,:]*1j
+                        self.param.plotppm(40+np.fft.fftshift(np.fft.fft(
+                            (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
+                                True, linewidth=1, linestyle='--',label="decoded")
+                rec_sig = rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen]
 
 
-            self.param.plotppm(np.fft.fftshift(np.fft.fft(
-                (rec_sig)).T)[p2:p1], rang[0], rang[1],
-                    False, linewidth=1, linestyle='--',label="rec_sig")
-            plt.title("#Epoch: " + str(self.current_epoch))
-            plt.legend()
-            self.param.savefig(self.param.epoch_dir+"decoded_paper1_1_epoch_" + "_"+ str(self.tr_wei))
-            # self.param.savefig(
-            #     self.param.epoch_dir + "decoded_paper1_1_epoch_" + str(self.current_epoch) + "_" + str(self.tr_wei))
+                self.param.plotppm(np.fft.fftshift(np.fft.fft(
+                    (rec_sig)).T)[p2:p1], rang[0], rang[1],
+                        False, linewidth=1, linestyle='--',label="rec_sig")
+                plt.title("#Epoch: " + str(self.current_epoch))
+                plt.legend()
+                self.param.savefig(self.param.epoch_dir+"decoded_paper1_1_epoch_" + "_"+ str(self.tr_wei))
+                # self.param.savefig(
+                #     self.param.epoch_dir + "decoded_paper1_1_epoch_" + str(self.current_epoch) + "_" + str(self.tr_wei))
 
-            if self.param.MM == True:
-                self.param.plotppm(15+np.fft.fftshift(np.fft.fft(((mm_v).cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1], False, linewidth=1,linestyle='--',label="mm_v")
+                if self.param.MM == True:
+                    self.param.plotppm(5+10*np.fft.fftshift(np.fft.fft(((mm_v).cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1], False, linewidth=1,linestyle='--',label="mm_v")
 
-            self.param.plotppm(30+np.fft.fftshift(np.fft.fft(
-                (rec_sig)).T)[p2:p1], rang[0], rang[1],
-                    False, linewidth=1, linestyle='--',label="rec_sig")
+                # self.param.plotppm(30+np.fft.fftshift(np.fft.fft(
+                #     (rec_sig)).T)[p2:p1], rang[0], rang[1],
+                #         False, linewidth=1, linestyle='--',label="rec_sig")
 
-            self.param.plotppm(np.fft.fftshift(np.fft.fft((rec_sig[0:self.param.y_test_trun.shape[1]]-self.param.y_test_trun.numpy()[id, :])).T)[p2:p1]
-                               , rang[0], rang[1], True,
-                               linewidth=0.3, linestyle='-',label="rec_sig-y_test_trun")
+                # self.param.plotppm(np.fft.fftshift(np.fft.fft((rec_sig[0:self.param.y_test_trun.shape[1]]-self.param.y_test_trun.numpy()[id, :])).T)[p2:p1]
+                #                    , rang[0], rang[1], True,
+                #                    linewidth=0.3, linestyle='-',label="rec_sig-y_test_trun")
 
 
-            # self.param.plotppm(200 + np.fft.fftshift(np.fft.fft(
-            #     (self.param.y_test_trun[id, :]-rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T), rang[0], rang[1],
-            #         True, linewidth=1, linestyle='--')
-            sns.despine()
-            self.param.plot_basis(10*(enc).cpu().detach().numpy(), fr.cpu().detach().numpy(), damp.cpu().detach().numpy(), ph.cpu().detach().numpy(),rng=rang)
-            # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(rec_signal.cpu().detach().numpy()[0,0:trunc])).T)[250:450], linewidth=1,linestyle='--')
-            plt.title("#Epoch: " + str(self.current_epoch))
-            plt.legend()
-            # self.param.savefig(self.param.epoch_dir+"fit_paper1_1_epoch_" + str(self.current_epoch) +"_"+ str(self.tr_wei))
-            self.param.savefig(
-                self.param.epoch_dir + "fit_paper1_1_epoch_" + "_" + str(self.tr_wei))
+                # self.param.plotppm(200 + np.fft.fftshift(np.fft.fft(
+                #     (self.param.y_test_trun[id, :]-rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T), rang[0], rang[1],
+                #         True, linewidth=1, linestyle='--')
+                sns.despine()
+                self.param.plot_basis(10*(enc).cpu().detach().numpy(), fr.cpu().detach().numpy(), damp.cpu().detach().numpy(), ph.cpu().detach().numpy(),rng=rang)
+                # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(rec_signal.cpu().detach().numpy()[0,0:trunc])).T)[250:450], linewidth=1,linestyle='--')
+                plt.title("#Epoch: " + str(self.current_epoch))
+                plt.legend()
+                # self.param.savefig(self.param.epoch_dir+"fit_paper1_1_epoch_" + str(self.current_epoch) +"_"+ str(self.tr_wei))
+                self.param.savefig(
+                    self.param.epoch_dir + "fit_paper1_1_epoch_" + "_" + str(self.tr_wei))
 
-            if self.param.parameters['spline']:
-                spline_rec = spline_rec.cpu().detach()
-                plt.plot(spline_rec.T)
-                # self.param.savefig(self.param.epoch_dir+"spline")
-                y_test = (self.param.y_test_trun[id, :]).unsqueeze(0)
-                y_test = self.param.zero_fill_torch(y_test, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
-                plt.plot(torch.fft.fftshift(torch.fft.fft((y_test)).T)[self.p1:self.p2])
-                rec_sig = self.param.zero_fill_torch(rec_signal, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
-                plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline_rec.cpu().detach().T)
-                self.param.savefig(self.param.epoch_dir + "result")
-
+                if self.param.parameters['spline']:
+                    # rec_signal, _, enc, fr, damp, ph, mm_v, _, decoded, spline_rec, spline_coeff = self(
+                    #     torch.unsqueeze(self.param.y_test_trun[id, :], 0).cuda(), cond_)
+                    fig = plt.figure()
+                    spline_rec = spline_rec.cpu().detach()
+                    plt.plot(spline_rec.T)
+                    # self.param.savefig(self.param.epoch_dir+"spline")
+                    y_test = (self.param.y_test_trun[id, :]).unsqueeze(0)
+                    y_test = self.param.zero_fill_torch(y_test, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
+                    plt.plot(torch.fft.fftshift(torch.fft.fft((y_test)).T)[self.p1:self.p2])
+                    rec_sig = self.param.zero_fill_torch(rec_signal, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
+                    plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline_rec.cpu().detach().T)
+                    # plt.title(f'condition:{cond_}')
+                    tensorboard = self.logger.experiment
+                    tensorboard.add_figure("recons", fig, self.current_epoch)
+                    self.param.savefig(self.param.epoch_dir + "result")
+        except:
+            print("problem in plottuimg during validation")
         self.log("val_acc", results['loss'])
         self.log("val_recons_loss", results['recons_loss'])
         self.validation_step_outputs.append(results['loss'])
@@ -522,19 +563,16 @@ class Encoder_Model(pl.LightningModule):
         self.eval()
         if cal_met == True:
             x = torch.unsqueeze(x, 0)
-            enct, latent = self.met(self.param.inputSig(x))
-            # enc = self.reparameterize(enct[:, 0:self.param.numOfSig],
-            #                           enct[:, self.param.numOfSig:2*(self.param.numOfSig)])
-            if self.beta!=0:
-                enc = self.reparameterize(enct[:, 0:self.enc_out],
-                                          enct[:, self.enc_out:2*(self.enc_out)])
-            else:
-                enc = enct[:, 0:self.enc_out]
+            enc, latent = self.met(self.param.inputSig(x))
         else:
             enc = ampl
-        D = jacobian(self.lc, enc[:,0:-1])
+
+        if len(enc.shape)==1:
+            enc = enc.unsqueeze(0)
+        fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase, spline_coeff = self.get_model_parameters(enc)
+        D= jacfwd(self.lc,argnums=(3,4))(fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase)
         # D_ = torch.stack(D[1:])
-        D_ = torch.transpose(torch.squeeze(D),1,0)
+        D_ = torch.transpose(torch.squeeze(torch.concatenate(D,-1)),1,0)
         I = 1 / noise_sd ** 2 * torch.einsum('mk,nk', D_, D_)
         I_inv = torch.inverse(I)
         crlb = torch.sqrt(I_inv.diag())
@@ -543,11 +581,18 @@ class Encoder_Model(pl.LightningModule):
         return crlb
 
     def bspline(self,coeff):
-        length, batch = coeff.T.shape
-        t = torch.linspace(0, self.in_size + 2 * (self.in_size/(length-2)), length).to(coeff.device)
-        coeffs = natural_cubic_spline_coeffs(t, coeff.T)
+        # cond = self.param.parameters['spline_reg']
+        # coeff = self.embed[cond](coeff)
+        length, batch = coeff.permute(1,0).shape
+        # length = int(length/(cond+1))
+        # coeff_ = coeff[:,0::(cond+1)]
+        dx = ((self.in_size)/(length-2))
+        t = torch.linspace(0, (self.in_size) + dx, length).to(coeff.device)
+        # t = t[0::(cond+1)]
+        coeffs = natural_cubic_spline_coeffs(t, coeff.permute(1,0))
         spline = NaturalCubicSpline(coeffs)
-        t = torch.linspace((self.in_size/(length-2)), self.in_size + (self.in_size/(length-2)), self.in_size).to(coeff.device)
+        # offset = ((self.in_size) + 2*((self.in_size)/(length-2)))/(length-2)
+        t = torch.linspace(dx, dx+self.in_size-1, self.in_size).to(coeff.device)
         out = spline.evaluate(t)
         return out.T
 

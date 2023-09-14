@@ -21,7 +21,7 @@ import numpy.fft as fft
 
 from utils import Jmrui, watrem
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
-from Model7 import Encoder_Model
+from Model import Encoder_Model
 fontsize = 16
 
 

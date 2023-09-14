@@ -2,7 +2,7 @@ import json
 import math
 
 import numpy as np
-json_file_path = 'runs/exp3.json'
+json_file_path = '../runs/exp3.json'
 with open(json_file_path, 'r') as j:
     contents = json.loads(j.read())[0]
 

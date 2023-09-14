@@ -122,7 +122,7 @@ class Engine():
         self.MM_constr = parameters['MM_constr']
         self.comp_freq = parameters['comp_freq']
         if self.MM_dir is not None:
-            self.mm = sio.loadmat(self.MM_dir).get("data")
+            self.mm = sio.loadmat(self.MM_dir).get("../data")
             self.mm[0] = self.mm[0] - 1*fft.fftshift(fft.fft(self.mm, axis=0))[0]
         self.sim_params = parameters['sim_params']
         if self.sim_params is not None:
@@ -1600,8 +1600,8 @@ class Engine():
         sns.set_style('white')
         path = "whole_Subj_l2/"
         Path(self.saving_dir+path).mkdir(exist_ok=True)
-        data= np.load("data/8 subj/MRSI_8volunteers_raw_data/data_HC_from_eva/test_data.npy")
-        mask = np.load("data/8 subj/MRSI_8volunteers_raw_data/data_HC_from_eva/mask_data.npy")
+        data= np.load("../data/8 subj/MRSI_8volunteers_raw_data/data_HC_from_eva/test_data.npy")
+        mask = np.load("../data/8 subj/MRSI_8volunteers_raw_data/data_HC_from_eva/mask_data.npy")
         mask = mask.squeeze()
         y_n= data.squeeze()
         nx, ny, nz, nt = y_n.shape
@@ -1895,7 +1895,7 @@ class Engine():
                     # self.beta_step /= (self.ens - 1)
                     # self.max_epoch = int(self.max_epoch * (self.ens - 1))
 
-                logger = TensorBoardLogger('tb-logs', name=self.loging_dir)
+                logger = TensorBoardLogger('../tb-logs', name=self.loging_dir)
                 lr_monitor = LearningRateMonitor(logging_interval='step')
                 if self.parameters['early_stop'][0]:
                     early_stopping = EarlyStopping('val_recons_loss',patience=self.parameters['early_stop'][1])
