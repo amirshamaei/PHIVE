@@ -27,11 +27,8 @@ fontsize = 16
 
 class Engine():
     def __init__(self, parameters):
-        if parameters['intr_plot'] == False:
-            plt.ioff()
-        else:
-            plt.ion()
         self.parameters = parameters
+
         self.saving_dir = parameters['parent_root'] + parameters['child_root'] + parameters['version']
         self.epoch_dir =  "epoch/"
         self.loging_dir = parameters['parent_root'] + parameters['child_root']
@@ -43,7 +40,7 @@ class Engine():
         Path(self.saving_dir+self.epoch_dir).mkdir(parents=True, exist_ok=True)
         self.max_epoch = parameters['max_epoch']
         self.batchsize = parameters['batchsize']
-        self.numOfSample = parameters['numOfSample'];
+        self.numOfSample = parameters['numOfSample']
         self.t_step = parameters['t_step']
         self.trnfreq = parameters['trnfreq']
         self.nauis = parameters['nauis']
@@ -55,6 +52,7 @@ class Engine():
         self.met_name = parameters['met_name']
         self.BW = 1 / self.t_step
         self.f = np.linspace(-self.BW / 2, self.BW / 2, 4096)
+
         try:
             basis_name = parameters["basis_name"]
         except:
@@ -64,6 +62,7 @@ class Engine():
             self.num_of_workers = parameters["num_of_workers"]
         except:
             self.num_of_workers = 0
+
         if self.basis_dir is not None:
             self.basisset = (sio.loadmat(self.basis_dir).get(basis_name)).T
             if parameters['basis_conj']:
@@ -125,6 +124,7 @@ class Engine():
         self.MM_dir = parameters['MM_dir']
         self.MM_constr = parameters['MM_constr']
         self.comp_freq = parameters['comp_freq']
+
         if self.MM_dir is not None:
             self.mm = sio.loadmat(self.MM_dir).get("MM")
             self.mm = self.normalize(self.mm.T)
@@ -156,7 +156,7 @@ class Engine():
             if parameters['MM_model'] == "lorntz":
                 self.MM_model = self.Lornz
                 self.MM_d = (np.pi * self.MM_d)
-                # self.MM_d = (np.pi ** self.MM_d) * ((self.MM_d) ** 2) / (2 * np.log(2))
+
             if parameters['MM_model'] == "gauss":
                 self.MM_model = self.Gauss
                 self.MM_d = self.MM_d * self.trnfreq
@@ -170,11 +170,13 @@ class Engine():
         self.heatmap_cmap = sns.diverging_palette(20, 220, n=200)
         self.sim_now = parameters['sim_order'][0]
         self.sim_dir = parameters['sim_order'][1]
+
         try:
             self.kw = self.parameters['kw']
         except:
             self.parameters['kw'] = 3
             self.kw = 3
+
         try:
             self.MM_fd_constr = self.parameters['MM_fd_constr']
         except:
@@ -198,335 +200,9 @@ class Engine():
             self.in_size = int(self.p2-self.p1)
             # %%
 
-    def relu(self,x):
-        return np.maximum(0,x)
-    def simulation(self):
-        mm_signals=0
-        sd = self.parameters["sd"]
-        d = np.random.normal(self.parameters["mmd_mean"][0], sd * self.parameters["mmd_std"][0],
-                             (self.numOfSample, 1))
-        for idx, (F, D, A) in enumerate(zip(self.MM_f, self.MM_d, self.MM_a)):
-            f = np.random.normal(self.parameters["mmf_mean"][idx],sd*self.parameters["mmf_std"][idx],(self.numOfSample,1))
-            a = self.relu(np.random.normal(self.parameters["mma_mean"][idx], sd*self.parameters["mma_std"][idx], (self.numOfSample,1)))
-            mm_signals += self.MM_model(a,f,d,0,A,self.trnfreq * F,D)
-            # print("min:{}, mean:{}, max:{}".format(np.min(f + self.trnfreq *F),np.mean(f + self.trnfreq *F),np.max(f + self.trnfreq *F)))
 
 
 
-        # for idx, (F, D, A) in enumerate(zip(self.parameters["MM_f"], self.parameters["MM_d"], self.parameters["MM_d"])):
-        #     ampl = np.random.normal(self.parameters["met_mean"],sd*self.parameters["met_std"],(self.numOfSample,1))
-
-        ampl = np.asarray(self.parameters["met_mean"]) + np.multiply(np.random.normal(0, 1, size=(self.numOfSample, self.numOfSig)), np.asarray(self.parameters["met_std"])*sd)
-        ampl = self.relu(ampl)
-        shift = np.random.normal(self.parameters["met_shift"][0],sd*self.parameters["met_shift"][1],(self.numOfSample,1))
-        freq = -2 * math.pi * (shift) * self.t.T
-        alpha = np.random.normal(self.parameters["met_damp"][0],sd*self.parameters["met_damp"][1],(self.numOfSample,1))
-        ph = np.random.normal(self.parameters["met_ph"][0],sd*self.parameters["met_ph"][1],(self.numOfSample))
-        signal = np.matmul(ampl[:, 0:self.numOfSig], self.basisset[0:self.sigLen, :].T)
-        # noise = np.random.normal(0, noiseLevel, (ns, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (ns, self.sigLen))
-        # signal = signal + noise
-
-        y = np.multiply(signal, np.exp(-alpha * self.t.T))
-        y = np.multiply(y, np.exp(freq * 1j))
-        y += mm_signals
-
-        y = y.T * np.exp(ph * 1j)
-
-
-        noiseLevel = np.max(y) * self.parameters["noise_level"]
-        noise = np.random.normal(0, noiseLevel, (self.numOfSample, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (self.numOfSample, self.sigLen))
-        y = y + noise.T
-        y_f = np.fft.fftshift(np.fft.fft(y[:,0:1000], axis=0), axes=0)
-        self.plotsppm(y_f, 0, 5, True)
-        plt.title("mean = {} and sd = {}".format(np.mean(self.cal_snrf(y_f)),np.std(self.cal_snrf(y_f))))
-        self.savefig("simulated_signals")
-        Path(self.sim_dir +self.parameters["child_root"]).mkdir(parents=True, exist_ok=True)
-        np.savez(self.sim_dir +self.parameters["child_root"]+ "big_gaba_size_{}_sd_{}".format(self.numOfSample,sd), y , mm_signals.T, ampl, shift, alpha, ph)
-        # np.save(self.sim_dir + "big_gaba_size_{}_sd_{}".format(self.numOfSample, sd), y)
-    def simulation_mc(self):
-        mm_signals=0
-        sd = 3
-        d_  = np.random.normal(self.parameters["mmd_mean"][0], sd * self.parameters["mmd_std"][0])
-        d = np.random.normal(d_, 0,
-                             (self.numOfSample, 1))
-
-        for idx, (F, D, A) in enumerate(zip(self.MM_f, self.MM_d, self.MM_a)):
-            f_ = np.random.normal(self.parameters["mmf_mean"][idx],sd*self.parameters["mmf_std"][idx])
-            f = np.random.normal(f_,0,(self.numOfSample,1))
-            a_ = np.random.normal(self.parameters["mma_mean"][idx], sd * self.parameters["mma_std"][idx])
-            a = self.relu(np.random.normal(a_, 0, (self.numOfSample,1)))
-            mm_signals += self.MM_model(a,f,d,0,A,self.trnfreq * F,D)
-
-
-        # for idx, (F, D, A) in enumerate(zip(self.parameters["MM_f"], self.parameters["MM_d"], self.parameters["MM_d"])):
-        #     ampl = np.random.normal(self.parameters["met_mean"],sd*self.parameters["met_std"],(self.numOfSample,1))
-
-        ampl_ = np.random.normal(np.asarray(self.parameters["met_mean"]), np.asarray(self.parameters["met_std"]), size=(1, self.numOfSig))
-        ampl = np.random.normal(ampl_, 0,
-                                 size=(self.numOfSample, self.numOfSig))
-        ampl = self.relu(ampl)
-        shift_ = np.random.normal(self.parameters["met_shift"][0], sd * self.parameters["met_shift"][1])
-        shift = np.random.normal(shift_,0,(self.numOfSample,1))
-        freq = -2 * math.pi * (shift) * self.t.T
-        alpha_ = np.random.normal(self.parameters["met_damp"][0], sd * self.parameters["met_damp"][1])
-        alpha = np.random.normal(alpha_,0,(self.numOfSample,1))
-        ph_ = np.random.normal(self.parameters["met_ph"][0], sd * self.parameters["met_ph"][1])
-        ph = np.random.normal(ph_,0,(self.numOfSample))
-        signal = np.matmul(ampl[:, 0:self.numOfSig], self.basisset[0:self.sigLen, :].T)
-        # noise = np.random.normal(0, noiseLevel, (ns, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (ns, self.sigLen))
-        # signal = signal + noise
-
-        y = np.multiply(signal, np.exp(-alpha * self.t.T))
-        y = np.multiply(y, np.exp(freq * 1j))
-        y += mm_signals
-
-        y = y.T * np.exp(ph * 1j)
-
-        # noiseLevel = np.max(y) * self.parameters["noise_level"]
-        # np.repeat(np.random.normal(1.6, 0.4, (self.numOfSample, 1)), 2048, 1) *
-        noiseLevel = np.max(y) * self.parameters["noise_level"]
-        noise = np.random.normal(0, noiseLevel, (self.numOfSample, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (self.numOfSample, self.sigLen))
-        y = y + noise.T
-        y_f = np.fft.fftshift(np.fft.fft(y[:, 0:1000], axis=0), axes=0)
-        self.plotsppm(y_f, 0, 5, True)
-        plt.title("mean = {} and sd = {}".format(np.mean(self.cal_snrf(y_f)), np.std(self.cal_snrf(y_f))))
-        self.savefig("simulated_signals")
-        Path(self.sim_dir + self.parameters["child_root"]).mkdir(parents=True, exist_ok=True)
-        np.savez(self.sim_dir + self.parameters["child_root"] + "big_gaba_size_{}_sd_{}".format(self.numOfSample,sd), y , mm_signals.T, ampl, shift, alpha, ph)
-        # np.save(self.sim_dir + "big_gaba_size_{}_sd_{}".format(self.numOfSample, sd), y)
-
-    def getSignals(self,min_c, max_c, f, d, ph, noiseLevel, ns, mm_cond):
-        if mm_cond == True:
-            basisset = np.concatenate((self.basisset, self.mm), axis=1)
-            numOfSig = self.numOfSig + 1
-        ampl = min_c + np.multiply(np.random.random(size=(ns, numOfSig)), (max_c - min_c))
-        # ampl = np.multiply(np.random.random(size=(ns, numOfSig)), (max_c))
-        shift = f * np.random.rand(ns) - f / 2
-        freq = -2 * math.pi * (shift) * self.t
-        alpha = d * np.random.rand(ns)
-        ph = (ph * np.random.rand(ns) * math.pi) - (ph / 2 * math.pi)
-        signal = np.matmul(ampl[:, 0:numOfSig], basisset[0:self.sigLen, :].T)
-        noise = np.random.normal(0, noiseLevel, (ns, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (ns, self.sigLen))
-        signal = signal + noise
-
-        y = np.multiply(signal, np.exp(freq * 1j).T)
-        y = y.T * np.exp(ph * 1j)
-        y = np.multiply(y, np.exp(-alpha * self.t))
-        return y, ampl, shift, alpha, ph
-
-    def getSignal(self,ampl, shift, alpha, ph, noiseLevel,mm_cond):
-        if mm_cond == True:
-            basisset = np.concatenate((self.basisset, self.mm), axis=1)
-            numOfSig = self.numOfSig + 1
-        freq = -2 * math.pi * (shift) * self.t
-        signal = np.matmul(ampl[:, 0:numOfSig], basisset[0:self.sigLen, :].T)
-        noise = np.random.normal(0, noiseLevel, (1, self.sigLen)) + 1j * np.random.normal(0, noiseLevel, (1, self.sigLen))
-        y = np.multiply(signal, np.exp(freq * 1j).T)
-        y = y.T * np.exp(ph * 1j)
-        y = np.multiply(y, np.exp(-alpha * self.t))
-        return y + noise.T, y
-    def get_augment(self, signals, n, f_band, ph_band, ampl_band, d_band, noiseLevel):
-        l = []
-        l.append(signals)
-        lens = np.shape(signals)[1]
-        shift_t = f_band * np.random.rand(n * lens) - (f_band / 2)
-        ph_t = ph_band * np.random.rand(n * lens) * math.pi - ((ph_band / 2) * math.pi)
-        ampl_t = 1 + ((ampl_band * np.random.rand(n * lens))-ampl_band/2)
-        d_t = d_band * np.random.rand(n * lens)
-        for i in range(0, lens):
-            signal = np.expand_dims(signals[:, i], 1)
-            numOfSamplei = n
-            freq = -2 * math.pi * (shift_t[i * numOfSamplei:(i + 1) * numOfSamplei]) * self.t
-            ph = ph_t[i * numOfSamplei:(i + 1) * numOfSamplei]
-            ampl = ampl_t[i * numOfSamplei:(i + 1) * numOfSamplei]
-            d = d_t[i * numOfSamplei:(i + 1) * numOfSamplei]
-            y = ampl * signal
-            y = np.multiply(y * np.exp(ph * 1j), np.exp(freq * 1j))
-            y = np.multiply(y, np.exp(-d * self.t))
-            noise = np.random.normal(0, noiseLevel, (len(signal), numOfSamplei)) + 1j * np.random.normal(0, noiseLevel,
-                                                                                                         (len(signal),
-                                                                                                          numOfSamplei))
-            y_i = y + noise
-            l.append(y_i)
-        y = np.hstack(l)
-        return y, ampl_t, d_t, shift_t, ph_t
-    def  savefig(self, path, plt_tight=True):
-        # plt.ioff()
-        if plt_tight:
-            plt.tight_layout()
-        if self.save:
-            plt.savefig(self.saving_dir + path + ".svg", format="svg")
-            # plt.savefig(self.saving_dir + path + " .png", format="png", dpi=1200)
-        plt.clf()
-        # plt.show()
-    # %%
-    # %%
-    def loadModel(autoencoder, path):
-        # m = LitAutoEncoder(t,signal_norm)
-        return autoencoder.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
-    # %%
-    def tic(self):
-        global start_time
-        start_time = time.time()
-    def toc(self,name):
-        elapsed_time = (time.time() - start_time)
-        print("--- %s seconds ---" % elapsed_time)
-        timingtxt = open(self.saving_dir + name + ".txt", 'w')
-        timingtxt.write(name)
-        timingtxt.write("--- %s ----" % elapsed_time)
-        timingtxt.close()
-        return elapsed_time
-
-    # %%
-    def cal_snr(self,data, endpoints=128,offset=0):
-        return np.abs(data[0, :]) / np.std(data.real[-(offset + endpoints):-(offset+1), :], axis=0)
-
-    def cal_snrf(self,data_f,range=[2,4],endpoints=128,offset=0):
-        p1 = int(self.ppm2p(range[0], data_f.shape[1]))
-        p2 = int(self.ppm2p(range[1], data_f.shape[1]))
-        return np.max(np.abs(data_f[:,p2:p1]), 1) / (np.std(data_f.real[:,offset:endpoints+offset],axis=1))
-
-    def ppm2p(self, r, len):
-        r = 4.7 - r
-        return int(((self.trnfreq * r) / (1 / (self.t_step * len))) + len / 2)
-
-    def ppm2f(self, r):
-        return r * self.trnfreq
-
-    def zero_fill(self,arr, dim, N):
-        """
-        Zero fills the given ndarray with the size of N in the requested dimension.
-
-        Parameters:
-        arr (numpy.ndarray): The input ndarray to be zero-filled.
-        dim (int): The index of the dimension to be zero-filled.
-        N (int): The size of the zero-filled dimension.
-
-        Returns:
-        numpy.ndarray: The zero-filled ndarray.
-        """
-
-        # Create a new shape tuple with N in the requested dimension
-        shape = list(arr.shape)
-        shape[dim] = N
-
-        # Create a new zero-filled ndarray with the new shape
-        out = np.zeros(shape,dtype=arr.dtype)
-
-        # Copy the original data into the new ndarray
-        slices = [slice(None)] * arr.ndim
-        slices[dim] = slice(None, arr.shape[dim])
-        out[slices] = arr
-
-        return out
-
-    def zero_fill_torch(self, arr, dim, N):
-        shape = list(arr.shape)
-        shape[dim] = N
-
-        # Create a new zero-filled ndarray with the new shape
-        out = torch.zeros(shape,dtype=arr.dtype).to(arr.device)
-
-        # Copy the original data into the new ndarray
-        slices = [slice(None)] * arr.ndim
-        slices[dim] = slice(None, arr.shape[dim])
-        out[slices] = arr
-
-        return out
-
-    def fillppm(self, y1, y2, ppm1, ppm2, rev, alpha=.1, color='red',ax=None):
-        # p1 = int(self.ppm2p(ppm1, len(y1)))
-        # p2 = int(self.ppm2p(ppm2, len(y1)))
-        # n = p2 - p1
-        n = len(y1)
-        x = np.linspace((ppm1), (ppm2), abs(n))
-        if ax ==None:
-            plt.fill_between(np.flip(x), y1[:, 0].real,
-                             y2[:, 0].real, alpha=alpha, color=color)
-            if rev:
-                plt.gca().invert_xaxis()
-        else:
-            ax.fill_between(np.flip(x), y1[:, 0].real,
-                             y2[:, 0].real, alpha=alpha, color=color)
-            if rev:
-                ax.invert_xaxis()
-
-    def plotsppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-', color=None):
-        p1 = int(self.ppm2p(ppm1, len(sig)))
-        p2 = int(self.ppm2p(ppm2, len(sig)))
-        n = p2 - p1
-        x = np.linspace(int(ppm1), int(ppm2), abs(n))
-        sig = np.squeeze(sig)
-        df = pd.DataFrame(sig[p2:p1, :].real)
-        df['Frequency(ppm)'] = np.flip(x)
-        df_m = df.melt('Frequency(ppm)',value_name='Real Signal (a.u.)')
-        g = sns.lineplot(x='Frequency(ppm)', y='Real Signal (a.u.)', data=df_m, linewidth=linewidth, linestyle=linestyle,ci="sd")
-        plt.legend([],[],frameon=False)
-        # g = plt.plot(np.flip(x), sig[p2:p1, :].real, linewidth=linewidth, linestyle=linestyle, color=color)
-        plt.tick_params(axis='both', labelsize=fontsize)
-        if rev:
-            plt.gca().invert_xaxis()
-
-    def normalize(self,inp):
-        return (np.abs(inp) / np.abs(inp).max(axis=0)) * np.exp(np.angle(inp) * 1j)
-
-    def plotppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-',label=None, mode='real',ax=None):
-        # p1 = int(self.ppm2p(ppm1, len(sig)))
-        # p2 = int(self.ppm2p(ppm2, len(sig)))
-        # n = p2 - p1
-        n = len(sig)
-        x = np.linspace(ppm1, ppm2, abs(n))
-        sig = np.squeeze(sig)
-        if mode=='real':
-            df = pd.DataFrame({'Real Signal (a.u.)': sig.real})
-        if mode=='abs':
-            df = pd.DataFrame({'Real Signal (a.u.)': np.abs(sig)})
-        df['Frequency(ppm)'] = np.flip(x)
-        g = sns.lineplot(x='Frequency(ppm)', y='Real Signal (a.u.)', data=df, linewidth=linewidth, linestyle=linestyle,label=label,ax=ax)
-        plt.tick_params(axis='both', labelsize=fontsize)
-        if rev:
-            if ax == None:
-                plt.gca().invert_xaxis()
-            else:
-                ax.invert_xaxis()
-        return g
-        # gca = plt.plot(x,sig[p2:p1,0],linewidth=linewidth, linestyle=linestyle)
-
-    def plot_basis2(self, basisset, ampl):
-        p1 = int(self.ppm2p(4, len(basisset)))
-        p2 = int(self.ppm2p(1, len(basisset)))
-        for i in range(0, len(basisset.T) - 1):
-            self.plotppm(+100* i + fft.fftshift(fft.fft(ampl * self.basisset[:, i]))[p1:p2], 1, 4, False,label=self.met_name[i])
-        self.plotppm(100 * (i + 1) + fft.fftshift(fft.fft(self.basisset[:, i + 1]))[p1:p2], 1, 4, True,label=self.met_name[i])
-        # plt.legend(self.met_name)
-        self.savefig("Basis" + str(ampl),plt_tight=True)
-        plt.tick_params(axis='both', labelsize=fontsize)
-
-
-    def plot_basis(self, ampl, fr, damp, ph, rng=[1,5]):
-        reve = False
-        p1 = int(self.ppm2p(rng[0], len(self.basisset)))
-        p2 = int(self.ppm2p(rng[1], len(self.basisset)))
-        for i in range(0, len(self.basisset.T)):
-            vv=fft.fftshift(fft.fft(ampl[0, i] * self.basisset[:len(self.t), i]*np.exp(-2 * np.pi *1j* fr * self.t.T)*np.exp(-1*damp*self.t.T)))
-            if i ==len(self.basisset.T)-1:
-                reve= True
-            ax = self.plotppm(-4 * (i+2) + vv.T[p2:p1], rng[0], rng[1], reve)
-            sns.despine(left=True,right=True,top=True)
-            plt.text(.1, -4 * (i+2), self.met_name[i],fontsize=8)
-            ax.tick_params(left=False)
-            ax.set(yticklabels=[])
-        plt.tick_params(axis='both', labelsize=fontsize)
-
-
-    def Lornz(self, ampl, f, d, ph ,Cra, Crfr, Crd):
-        return (Cra*ampl) * np.multiply(np.multiply(np.exp(ph * 1j),
-                                                    np.exp(-2 * math.pi * ((f + Crfr)) * self.t.T * 1j)),
-                                     np.exp(-1*(d + Crd) * self.t.T))
-    def Gauss(self, ampl, f, d, ph, Cra, Crfr, Crd):
-        return (Cra*ampl) * np.multiply(np.multiply(np.exp(ph * 1j),
-                                                    np.exp(-2 * math.pi * ((f + Crfr)) * self.t.T * 1j)),
-                                     np.exp(-1*((d + Crd)**2) * self.t.T * self.t.T))
 
 
     def data_proc(self):
@@ -636,7 +312,6 @@ class Engine():
             my_dataset = TensorDataset(self.y_trun,labels)
             self.train, self.val = random_split(my_dataset, [int((self.numOfSample) * self.tr_prc), self.numOfSample - int((self.numOfSample) * self.tr_prc)])
 
-
     def inputSig(self,x,p1=None,p2=None):
         if self.parameters['domain'] == 'freq':
             if self.parameters['zero_fill'][0] == True:
@@ -657,82 +332,6 @@ class Engine():
                                   torch.unsqueeze(x[:, 0:self.truncSigLen].imag, 1)), 1)
             if self.in_shape == 'real':
                 return torch.unsqueeze(x[:, 0:self.truncSigLen].real, 1)
-
-    def bland_altman_plot(self,data1, data2, *args, **kwargs):
-        data1 = np.asarray(data1)
-        data2 = np.asarray(data2)
-        mean = np.mean([data1, data2], axis=0)
-        diff = data1 - data2  # Difference between data1 and data2
-        md = np.mean(diff)  # Mean of the difference
-        sd = np.std(diff, axis=0)  # Standard deviation of the difference
-
-        plt.scatter(mean, diff, *args, **kwargs)
-        plt.axhline(md, color='gray', linestyle='--')
-        plt.axhline(md + 1.96 * sd, color='gray', linestyle='--')
-        plt.axhline(md - 1.96 * sd, color='gray', linestyle='--')
-
-    def modified_bland_altman_plot(self,data1, data2, gt=None,c_map=None, *args, **kwargs):
-        data1 = np.asarray(data1)
-        data2 = np.asarray(data2)
-        diff = data1 - data2  # Difference between data1 and data2
-        md = np.mean(diff)  # Mean of the difference
-        sd = np.std(diff, axis=0)  # Standard deviation of the difference
-        if gt is not None:
-            ax = plt.scatter(gt, diff,cmap='Spectral', *args, **kwargs)
-        else:
-            ax = plt.scatter(range(0, data1.shape[0]), diff ,cmap='Spectral', *args, **kwargs)
-        plt.axhline(md, color='gray', linestyle='-',linewidth=3)
-        plt.axhline(md + 1.96 * sd, color='gray', linestyle='--',linewidth=2)
-        plt.axhline(md - 1.96 * sd, color='gray', linestyle='--',linewidth=2)
-        sns.despine()
-        if c_map != None:
-            plt.set_cmap(c_map)
-            cb = plt.colorbar()
-            cb.outline.set_visible(False)
-            cb.ax.tick_params(labelsize=fontsize)
-        plt.tick_params(axis='both', labelsize=fontsize)
-
-        return ax
-
-    def calib_plot(self,ampl_t,y_out, yerr,cmap):
-        if cmap==None :
-            ax = plt.scatter(x=ampl_t, y=y_out)
-        else:
-            ax = plt.scatter(x=ampl_t, y=y_out, c=yerr, cmap='Spectral')
-            plt.set_cmap(cmap)
-            cb = plt.colorbar()
-            cb.outline.set_visible(False)
-            cb.ax.tick_params(labelsize=fontsize)
-        ax.axes.spines['right'].set_visible(False)
-        ax.axes.spines['top'].set_visible(False)
-        # Only show ticks on the left and bottom spines
-        ax.axes.yaxis.set_ticks_position('left')
-        ax.axes.xaxis.set_ticks_position('bottom')
-        x0, x1 = ax.axes.get_xlim()
-        y0, y1 = ax.axes.get_ylim()
-        lims = [max(x0, y0), min(x1, y1)]
-        ax.axes.plot(lims, lims, '--k')
-        ax.axes.set_xlabel("True")
-        ax.axes.set_ylabel('Predicted')
-        plt.tick_params(axis='both', labelsize=fontsize)
-
-    def err_plot(self, x , y, yerr, name, cmap):
-        if cmap==None :
-            ax = plt.scatter(x, y)
-        else:
-            ax = plt.scatter(x, y, c=yerr, cmap='Spectral')
-            cb = plt.colorbar()
-            cb.outline.set_visible(False)
-            cb.ax.tick_params(labelsize=fontsize)
-        plt.set_cmap(cmap)
-        ax.axes.spines['right'].set_visible(False)
-        ax.axes.spines['top'].set_visible(False)
-        # Only show ticks on the left and bottom spines
-        ax.axes.yaxis.set_ticks_position('left')
-        ax.axes.xaxis.set_ticks_position('bottom')
-        ax.axes.set_xlabel(name)
-        ax.axes.set_ylabel('Prediction Error')
-        plt.tick_params(axis='both', labelsize=fontsize)
 
 
     def test_compact(self,ensembles = True,crlb=True,estimate=False):
@@ -916,7 +515,6 @@ class Engine():
                         damp[idx, :],
                         ph[idx, :])
         self.savefig(id  +"_tstasig")
-
 
     def test(self,ensembles = True, crlb=False):
         cmap = 'Blues'
@@ -1204,233 +802,6 @@ class Engine():
             plt.scatter(ampl_t[:, idx]-y_out[:, idx],yerr_epis)
             self.savefig(id + "yerr_pres_epis_vs_" + 'error_' + name)
         # file.close()
-
-
-    def test_MonteCarlo(self,ensembles = True):
-        cmap = 'Blues'
-        id = self.test_data_root
-        data = np.load(self.sim_dir + id + '.npz')
-        y_test, mm_signals, ampl_t, shift_t, alpha_t, ph_t = [data[x] for x in data]
-        snrs = self.cal_snrf(fft.fftshift(fft.fft(y_test, axis=0), axes=0))
-
-        # data = np.load(self.sim_dir + "test_" + str(self.test_params[2:]) + '.npz')
-        # y_test, ampl_t, shift_t, alpha_t, ph_t, snrs = [data[x] for x in data]
-        id_test = "test/" + id + "/"
-        id = "test_all/" + id + "/"
-        selected_met = ["Cr", "GPC", "Glu", "mIns", "NAA", "NAAG", "PCho", "PCr", "Tau"]
-        Path(self.saving_dir + id).mkdir(parents=True, exist_ok=True)
-        test_info = pd.DataFrame()
-        test_info['SNR'] = snrs
-        test_info['Frequency'] = shift_t
-        test_info['Damping'] = alpha_t
-        test_info['Phase'] = ph_t
-
-        sns.set(style="white", palette="muted", color_codes=True)
-        sns.distplot(test_info['SNR'], color="m")
-        sns.despine()
-        self.savefig("test_snr_hist")
-
-        y_test = y_test.astype('complex64')
-        y_test = torch.from_numpy(y_test)
-        # print(y_test.size())
-        rslt = np.load(self.saving_dir + id_test + 'rslt_wiithout_ph_1.npz', allow_pickle=True)
-        y_out, mean_, fr, damp, ph, decs, encs, epistemic_unc, aleatoric_unc, decoded_net, mm_ = [rslt[x] for x in rslt]
-
-        # test_info[self.met_name] = np.abs((ampl_t - y_out)/(ampl_t + y_out))*100
-        if self.MM == True:
-            self.numOfComp = self.numOfSig + 1
-        test_info[self.met_name] = np.abs(ampl_t[:, 0:len(self.met_name)] - y_out)
-        type = ['Predicted' for i in y_out]
-        net_pred = pd.DataFrame(y_out, columns=self.met_name)
-        net_pred['type'] = type
-        type = ['True' for i in y_out]
-        net_true = pd.DataFrame(ampl_t[:, 0:len(self.met_name)], columns=self.met_name)
-        net_true['type'] = type
-        net_pred = net_pred.append(net_true)
-
-        corr = test_info.corr()
-        corr.iloc[4:, 0].transpose().to_csv(self.saving_dir + id + "_errors_corr.csv")
-        sns.heatmap(data=corr.iloc[4:, 0:1].transpose(), cmap=self.heatmap_cmap)
-        self.savefig(id + "corrollation_heatmap")
-
-        # quest, true = rslt_vis.getQuest()
-        errors_DL = pd.DataFrame(columns=['R2', 'MAE', 'MSE', 'MAPE', 'r2', 'intercept', 'coef'], index=self.met_name)
-        errors_Q = pd.DataFrame(columns=['R2', 'MAE', 'MSE', 'MAPE', 'r2', 'intercept', 'coef'], index=self.met_name)
-        for i in range(0, self.ens-1):
-            for j in range(0, self.numOfSig):
-                # ax = sns.regplot(x=ampl_t[:, j], y=encs[i, :, j],label=str(i))
-                model = LinearRegression().fit(ampl_t[:, j].reshape((-1, 1)), encs[i, :, j].reshape((-1, 1)))
-                errors_DL.iloc[j] = [r2_score(ampl_t[:, j], encs[i, :, j]),
-                                     mean_absolute_error(ampl_t[:, j], encs[i, :, j]),
-                                     mean_squared_error(ampl_t[:, j], encs[i, :, j]),
-                                     mean_absolute_percentage_error(ampl_t[:, j], encs[i, :, j]) * 100,
-                                     model.score(ampl_t[:, j].reshape((-1, 1)), encs[i, :, j].reshape((-1, 1))),
-                                     model.intercept_[0],
-                                     model.coef_[0][0]]
-                # plt.title("DL::" + str(i) + "::"+ self.met_name[j])
-                # # plt.legend()
-                # x0, x1 = ax.get_xlim()
-                # y0, y1 = ax.get_ylim()
-                # lims = [max(x0, y0), min(x1, y1)]
-                # ax.plot(lims, lims, '--k')
-                # plt.show()
-            errors_DL.to_csv(self.saving_dir + id + "_" + str(i) + "Ens_errorsDL.csv")
-
-        file = open(self.saving_dir + id + '_predicts.csv', 'w')
-        writer = csv.writer(file)
-        writer.writerows(np.concatenate((y_out, mean_, epistemic_unc, aleatoric_unc, fr, damp, ph), axis=1))
-        file.close()
-        mean_f = np.mean((fr) - np.expand_dims(shift_t, axis=[1]))
-        mean_alph = np.mean((damp) - np.expand_dims(alpha_t, axis=[1]))
-        mean_ph = np.mean((ph) - np.expand_dims(ph_t, axis=[1]))
-        std_f = np.std((fr) - np.expand_dims(shift_t, axis=[1]))
-        std_alph = np.std((damp) - np.expand_dims(alpha_t, axis=[1]))
-        std_ph = np.std((ph) - np.expand_dims(ph_t, axis=[1]))
-
-        file = open(self.saving_dir + id + '_rslt.csv', 'w')
-        writer = csv.writer(file)
-        writer.writerow(["freq", mean_f, std_f])
-        writer.writerow(["damp", mean_alph, std_alph])
-        writer.writerow(["ph", mean_ph, std_ph])
-        # test_info['f_error'] = fr[:, 0] - np.expand_dims(shift_t, axis=[1])[:, 0]
-        # test_info['d_error'] = damp[:, 0] - np.expand_dims(alpha_t, axis=[1])[:, 0]
-        # test_info['p_error'] = (ph[:, 0] * 180 / np.pi) - np.expand_dims(ph_t * 180 / np.pi, axis=[1])[:, 0]
-        # sns.jointplot(x=test_info[['f_error','d_error']], y=test_info[['f','d']])
-
-        ax = self.modified_bland_altman_plot(shift_t, fr)
-        self.savefig(id + "freq")
-
-        ax = self.modified_bland_altman_plot(alpha_t, damp)
-        self.savefig(id + "damp")
-
-        ax = self.modified_bland_altman_plot(ph_t * 180 / np.pi, ph[:, 0] * 180 / np.pi)
-        self.savefig(id + "ph")
-
-        ids1 = [2, 12, 8, 14, 17, 9]
-        ids2 = [15, 13, 7, 5, 6, 10]
-        names = ["Cr+PCr", "NAA+NAAG", "Glu+Gln", "PCho+GPC", "Glc+Tau", "Ins+Gly"]
-        errors_combined = pd.DataFrame(columns=['R2', 'MAE', 'MSE', 'MAPE', 'r2', 'intercept', 'coef'], index=names)
-        idx = 0
-        for id1, id2, name in zip(ids1, ids2, names):
-            # var = (y_out_var[:, id1]**2 + y_out_var[:, id2]**2) + (ampl_t[:, id1]**2 + ampl_t[:, id2]**2)
-            # corr, _ = pearsonr(ampl_t[:, id1], ampl_t[:, id2])
-            # warning! how we can calculate sd for two corrolated normal distribution!?
-            # sd = 100 * np.sqrt(y_out_var[:, id1] + y_out_var[:, id2]) / (y_out[:, id1] + y_out[:, id2])
-            self.modified_bland_altman_plot(ampl_t[:, id1] + ampl_t[:, id2], (y_out[:, id1] + y_out[:, id2]))
-
-            plt.title(name)
-            self.savefig(id + "combined_" + name)
-
-            model = LinearRegression().fit((ampl_t[:, id1] + ampl_t[:, id2]).reshape((-1, 1)),
-                                           (y_out[:, id1] + y_out[:, id2]).reshape((-1, 1)))
-            errors_combined.iloc[idx] = [r2_score(ampl_t[:, id1] + ampl_t[:, id2], (y_out[:, id1] + y_out[:, id2])),
-                                         mean_absolute_error(ampl_t[:, id1] + ampl_t[:, id2],
-                                                             (y_out[:, id1] + y_out[:, id2])),
-                                         mean_squared_error(ampl_t[:, id1] + ampl_t[:, id2],
-                                                            (y_out[:, id1] + y_out[:, id2])),
-                                         mean_absolute_percentage_error(ampl_t[:, id1] + ampl_t[:, id2],
-                                                                        (y_out[:, id1] + y_out[:, id2])) * 100,
-                                         model.score((ampl_t[:, id1] + ampl_t[:, id2]).reshape((-1, 1)),
-                                                     (y_out[:, id1] + y_out[:, id2]).reshape((-1, 1))),
-                                         model.intercept_,
-                                         model.coef_
-                                         ]
-
-            idx += 1
-        errors_combined.to_csv(self.saving_dir + id + "_errors_combined.csv")
-        errors_averaged = pd.DataFrame(columns=['R2', 'MAE', 'MSE', 'MAPE', 'r2', 'intercept', 'coef'],
-                                       index=self.met_name)
-
-        if self.parameters["detailed_test"]:
-            j = 0
-            errors_corr = pd.DataFrame(columns=self.met_name, index=["damping", 'frequency', 'Phase', 'SNR'])
-            for idx, name in enumerate(self.met_name):
-                # model = LinearRegression().fit(ampl_t[:, j].reshape((-1, 1)), y_out[:, idx].reshape((-1, 1)))
-                # errors_averaged.iloc[j] = [r2_score(ampl_t[:, idx], y_out[:, idx]),
-                #                            mean_absolute_error(ampl_t[:, idx], y_out[:, idx]),
-                #                            mean_squared_error(ampl_t[:, idx], y_out[:, idx]),
-                #                            mean_absolute_percentage_error(ampl_t[:, idx], y_out[:, idx]) * 100,
-                #                            model.score(ampl_t[:, j].reshape((-1, 1)), y_out[:, idx].reshape((-1, 1))),
-                #                            model.intercept_,
-                #                            model.coef_
-                #                            ]
-                #
-                # yerr = 100 * np.abs(np.sqrt(y_out_var[:, idx]) / y_out[:, idx])
-                yerr_ale = 100 * np.abs(np.sqrt(aleatoric_unc[:, idx]) / y_out[:, idx])
-                yerr_epis = 100 * np.abs(np.sqrt(epistemic_unc[:, idx]) / y_out[:, idx])
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], c=yerr, c_map=cmap)
-                # plt.title(self.met_name[idx])
-                # self.savefig(id + "seperated_percent" + name)
-                #
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], c=yerr_ale, c_map='Reds')
-                # plt.title(self.met_name[idx])
-                # self.savefig(id + "seperated_percent_ale" + name)
-                #
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], c=yerr_epis, c_map='Greens')
-                # plt.title(self.met_name[idx])
-                # self.savefig(id + "seperated_percent_epis" + name)
-
-                # yerr = np.abs(np.sqrt(y_out_var[:, idx]))
-                # yerr_ale = np.abs((aleatoric_unc[:, idx]))
-                # yerr_epis = np.abs((epistemic_unc[:, idx]))
-                # self.modified_bland_altman_plot(100*ampl_t[:, idx]/ampl_t[:, idx], 100*y_out[:, idx]/ampl_t[:, idx], c=yerr, c_map=cmap)
-                # plt.title(self.met_name[idx] + "corr: {}".format(np.corrcoef((ampl_t[:, idx]-y_out[:, idx]),yerr)))
-                # self.savefig(id + "seperated" + name)
-
-                self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], c=yerr_ale, c_map='Reds')
-                plt.title(self.met_name[idx] + "corr: {}".format(np.corrcoef((ampl_t[:, idx]-y_out[:, idx]),yerr_ale)))
-                self.savefig(id + "seperated_ale" + name)
-
-                self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], c=yerr_epis, c_map='Greens')
-                plt.title(self.met_name[idx] + "corr: {}".format(np.corrcoef((ampl_t[:, idx]-y_out[:, idx]),yerr_epis)[0,1]))
-                self.savefig(id + "seperated_epis" + name)
-
-                j += 1
-
-            for idx_null, name in enumerate(selected_met):
-                idx = self.met_name.index(name)
-                # err = np.abs(y_out[:, idx] - ampl_t[:, idx])
-                # yerr = 100 * np.abs(np.sqrt(y_out_var[:, idx]) / y_out[:, idx])
-                yerr_ale = 100 * np.abs(np.sqrt(aleatoric_unc[:, idx]) / y_out[:, idx])
-                yerr_epis = 100 * np.abs(np.sqrt(epistemic_unc[:, idx]) / y_out[:, idx])
-                #
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr, c_map=cmap)
-                # plt.title(name)
-                # self.savefig(id + "corrollation_precent" + 'snrs_' + name)
-                #
-                #
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr_ale, c_map='Reds')
-                # plt.title(name)
-                # self.savefig(id + "corrollation_yerr_ale_precent" + 'snrs_' + name)
-                #
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr_epis, c_map='Greens')
-                # plt.title(name)
-                # self.savefig(id + "corrollation_yerr_epis_precent" + 'snrs_' + name)
-
-                # yerr = np.abs(np.sqrt(y_out_var[:, idx]))
-                yerr_ale = np.abs((aleatoric_unc[:, idx]))
-                yerr_epis = np.abs((epistemic_unc[:, idx]))
-
-                # self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr, c_map=cmap)
-                # plt.title(name)
-                # self.savefig(id + "corrollation_" + 'snrs_' + name)
-
-
-                self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr_ale, c_map='Reds')
-                plt.title(name)
-                self.savefig(id + "corrollation_yerr_ale_" + 'snrs_' + name)
-
-                plt.scatter(fr,yerr_ale)
-                self.savefig(id + "yerr_ale_vs_" + 'fr' + name)
-
-                self.modified_bland_altman_plot(ampl_t[:, idx], y_out[:, idx], gt=snrs, c=yerr_epis, c_map='Greens')
-                plt.title(name)
-                self.savefig(id + "corrollation_yerr_epis_" + 'snrs_' + name)
-
-                j += 1
-            errors_averaged.to_csv(self.saving_dir + id + "_errors_averaged.csv")
-
-
     # %%
     def test_asig(self,shift_t, alpha_t, ph_t, nl):
         sns.set_style('white')
@@ -1460,8 +831,6 @@ class Engine():
         # print(ampl_t - ampl)
         # print(np.sqrt(ampl_var))
         # print(self.cal_snrf(fft.fftshift(fft.fft(y_n))))
-
-
     # %%
     def testmodel(self, model, x,enable_dropout=False):
         model.eval()
@@ -1478,7 +847,6 @@ class Engine():
             # _, recons_loss = [lo / len(x) for lo in
             #                          model.loss_function(dec, x, mu, logvar, mm, decoded, 0, enc, b_spline_rec,ph_sig,recons_f)]
         return dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec,recons_loss
-
     # %%
     def getCRLB(self, model, x, ampl = None):
         noise = torch.std(x.T.real[-(68 + 128):-(68+1)], axis=0)
@@ -1490,10 +858,7 @@ class Engine():
         with torch.no_grad():
             temp = model.crlb(x,noise_sd=noise,ampl=ampl, percent=False,cal_met=cal_met)
         return temp
-    def sigmoid(self,x):
-        z = np.exp(-x)
-        sig = 1 / (1 + z)
-        return sig
+
     def predict_ensembles(self,y_test, mean_= True):
         decs = []
         encts = []
@@ -1632,11 +997,6 @@ class Engine():
             ampl_var = aleatoric_unc + epistemic_unc
         # ampl = np.mean(np.asarray(encs),0)
         return ampl, ampl_var, shift, damp, ph, np.asarray(decs), encts_np[:, :, 0:self.numOfSig],epistemic_unc, aleatoric_unc, np.asarray(decodedl),np.asarray(mml)
-
-    def wighted_var(self, x, w, **kwargs):
-        w_mean = (np.average(x, 0, weights=w,**kwargs))
-        w_var = np.average((x - w_mean) ** 2, 0, weights=w,**kwargs)
-        return w_var
 
     def quantify_whole_subject(self, crlb=False):
         sns.set_style('white')
@@ -1950,7 +1310,6 @@ class Engine():
                 plt.plot(3+torch.fft.fftshift(torch.fft.fft((rec_sig-y_test_)).T)[self.p1:self.p2] + spline[:,id].T)
                 plt.plot(spline[0,id])
                 self.savefig(path + str(ll) + "result")
-
 
     def dotrain(self,enc_num_manual=0):
         if self.MM_plot == True:

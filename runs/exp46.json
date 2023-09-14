@@ -2,6 +2,7 @@
    "runs": [
       {
       "description": "copy of 45+variational Model 6 + fixed reg wei",
+      "ens_id": 0,
       "decode" : false,
       "simulated" : false,
       "supervised" :  false,
@@ -94,7 +95,6 @@
       "max_c":null,
       "detailed_test": true,
       "reduce_lr" : [0.5],
-      "intr_plot" : false,
       "norm_basis" : true,
       "MM_conj": false,
       "min_c":[
