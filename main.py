@@ -10,7 +10,7 @@ def main():
         if run["version"] in ["1/"]:
             engine = eng . Engine(run)
             engine . dotrain(run["ens_id"])
-            engine.dotest()
+            # engine.dotest()
     file.close()
 
 if __name__ == '__main__':

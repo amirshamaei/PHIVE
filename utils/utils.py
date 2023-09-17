@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy.fft as fft
 
+from utils import Jmrui
+
 fontsize = 16
 def relu(self, x):
     return np.maximum(0, x)
@@ -99,10 +101,10 @@ def  savefig(self, path, plt_tight=True):
 
 # %%
 def tic(self):
-    global start_time
-    start_time = time.time()
+    self.start_time = time.time()
+    return self
 def toc(self,name):
-    elapsed_time = (time.time() - start_time)
+    elapsed_time = (time.time() - self.start_time)
     print("--- %s seconds ---" % elapsed_time)
     timingtxt = open(self.saving_dir + name + ".txt", 'w')
     timingtxt.write(name)
@@ -114,8 +116,8 @@ def toc(self,name):
 
 
 def cal_snrf(self,data_f,range=[2,4],endpoints=128,offset=0):
-    p1 = int(self.ppm2p(range[0], data_f.shape[1]))
-    p2 = int(self.ppm2p(range[1], data_f.shape[1]))
+    p1 = int(ppm2p(self, range[0], data_f.shape[1]))
+    p2 = int(ppm2p(self, range[1], data_f.shape[1]))
     return np.max(np.abs(data_f[:,p2:p1]), 1) / (np.std(data_f.real[:,offset:endpoints+offset],axis=1))
 
 def ppm2p(self, r, len):
@@ -199,7 +201,7 @@ def plotsppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-', color=Non
     if rev:
         plt.gca().invert_xaxis()
 
-def normalize(self,inp):
+def normalize(inp):
     return (np.abs(inp) / np.abs(inp).max(axis=0)) * np.exp(np.angle(inp) * 1j)
 
 def plotppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-',label=None, mode='real',ax=None):
@@ -345,3 +347,25 @@ def wighted_var(self, x, w, **kwargs):
     w_mean = (np.average(x, 0, weights=w,**kwargs))
     w_var = np.average((x - w_mean) ** 2, 0, weights=w,**kwargs)
     return w_var
+
+
+def plot_MM(self):
+    if 'param' in self.MM_type:
+        if self.MM:
+            mm = 0
+            for idx in range(0, self.numOfMM):
+                if self.MM_conj == True:
+                    x = np.conj(self.MM_model(self.MM_a[idx], 0, 0, 0, self.ppm2f(self.MM_f[idx]), self.MM_d[idx]))
+                else:
+                    x = (self.MM_model(self.MM_a[idx], 0, 0, 0, self.ppm2f(self.MM_f[idx]), self.MM_d[idx]))
+                mm += x
+                if idx == self.numOfMM - 1:
+                    self.plotppm(-10 * idx + fft.fftshift(fft.fft(x)).T, 0, 5, True)
+                else:
+                    self.plotppm(-10 * idx + fft.fftshift(fft.fft(x)).T, 0, 5, False)
+            self.savefig("MM")
+            self.mm = mm.T
+            Jmrui.write(Jmrui.makeHeader("tesDB", np.size(self.mm, 0), np.size(self.mm, 1), 0.25, 0, 0,
+                                         1.2322E8), self.mm, self.saving_dir + '_mm.txt')
+
+    self.plot_basis2(self.basisset, 2)

@@ -22,6 +22,8 @@ import numpy.fft as fft
 from utils import Jmrui, watrem
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 from Model import Encoder_Model
+from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic
+
 fontsize = 16
 
 
@@ -65,28 +67,15 @@ class Engine():
 
         if self.basis_dir is not None:
             self.basisset = (sio.loadmat(self.basis_dir).get(basis_name)).T
-            if parameters['basis_conj']:
-                self.basisset = np.conj(self.basisset)
             try:
+                if parameters['basis_conj']:
+                    self.basisset = np.conj(self.basisset)
                 if parameters['norm_basis']:
-                    pass
-                    # self.basisset = self.normalize(self.basisset)
+                    self.basisset = self.normalize(self.basisset)
             except:
-                pass
+                print("couldn't read basisset")
         self.wr = parameters['wr']
         self.data_name = parameters['data_name']
-        if self.data_dir is not None:
-            try:
-                self.dataset = scipy.io.loadmat(self.data_dir).get(self.data_name).T
-            except:
-                try:
-                    self.dataset = mat73.loadmat(self.data_dir).get(self.data_name).T
-                except:
-                    try:
-                        self.dataset = np.load(self.data_dir).T
-                    except:
-                        print("couln't read data")
-
         self.numOfSig = parameters['numOfSig']
         self.sigLen = parameters['sigLen']
         self.truncSigLen = parameters['truncSigLen']
@@ -102,18 +91,12 @@ class Engine():
         self.MM_plot = parameters['MM_plot']
         self.pre_plot = parameters['pre_plot']
         self.basis_need_shift = parameters['basis_need_shift']
-        self.basisset = self.normalize(self.basisset)
         self.aug_params = parameters['aug_params']
         self.tr_prc = parameters['tr_prc']
         self.in_shape= parameters['in_shape']
         self.enc_type = parameters['enc_type']
         self.banorm = parameters['banorm']
         self.getCRLB_vmap = torch.vmap(self.getCRLB,in_dims=(None,0,0))
-        if self.basis_dir and parameters['max_c'] is not None:
-            max_c = np.array(parameters['max_c'])
-            min_c = np.array(parameters['min_c'])
-            self.min_c = (min_c) / np.max((max_c));
-            self.max_c = (max_c) / np.max((max_c));
         self.reg_wei = parameters['reg_wei']
         self.data_conj = parameters['data_conj']
         self.test_nos = parameters['test_nos']
@@ -127,46 +110,28 @@ class Engine():
 
         if self.MM_dir is not None:
             self.mm = sio.loadmat(self.MM_dir).get("MM")
-            self.mm = self.normalize(self.mm.T)
-            # self.mm[0] = self.mm[0] - 1*fft.fftshift(fft.fft(self.mm, axis=0))[0]
+            if parameters['norm_basis']:
+                self.mm = normalize(self.mm.T)
             if parameters['basis_conj']:
                 self.mm = np.conj(self.mm)
-            try:
-                if parameters['norm_basis']:
-                    pass
-                    # self.basisset = self.normalize(self.basisset)
-            except:
-                pass
-        self.sim_params = parameters['sim_params']
-        if self.sim_params is not None:
-            for i, val in enumerate(self.sim_params):
-                if isinstance(val,str):
-                    self.sim_params[i] = getattr(self, self.sim_params[i])
-        try:
-            self.test_params = parameters['test_params']
-
-            if self.test_params is not None:
-                for i, val in enumerate(self.test_params):
-                    if isinstance(val,str):
-                        self.test_params[i] = getattr(self, self.test_params[i])
-        except:
-            pass
 
         if self.MM:
             if parameters['MM_model'] == "lorntz":
-                self.MM_model = self.Lornz
+                self.MM_model = Lornz
                 self.MM_d = (np.pi * self.MM_d)
 
             if parameters['MM_model'] == "gauss":
-                self.MM_model = self.Gauss
+                self.MM_model = Gauss
                 self.MM_d = self.MM_d * self.trnfreq
                 self.MM_d = (np.pi * self.MM_d)/(2*np.sqrt(np.log(2)))
             self.numOfMM = len(self.MM_f)
+
             if self.MM_type == 'single' or self.MM_type == 'single_param':
                 self.met_name.append("MM")
                 self.numOfMM += 1
         else:
             self.numOfMM = 0
+
         self.heatmap_cmap = sns.diverging_palette(20, 220, n=200)
         self.sim_now = parameters['sim_order'][0]
         self.sim_dir = parameters['sim_order'][1]
@@ -176,11 +141,6 @@ class Engine():
         except:
             self.parameters['kw'] = 3
             self.kw = 3
-
-        try:
-            self.MM_fd_constr = self.parameters['MM_fd_constr']
-        except:
-            self.MM_fd_constr = True
 
         try:
             self.MM_conj = self.parameters['MM_conj']
@@ -194,11 +154,11 @@ class Engine():
         if self.basis_need_shift[0] == True:
             self.basisset = self.basisset[:, :] * np.exp(
                 2 * np.pi * self.ppm2f(self.basis_need_shift[1]) * 1j * self.t)
+
         if self.parameters['domain'] == 'freq':
-            self.p1 = int(self.ppm2p(self.parameters['fbound'][2], (self.truncSigLen)))
-            self.p2 = int(self.ppm2p(self.parameters['fbound'][1], (self.truncSigLen)))
+            self.p1 = int(ppm2p(self,self.parameters['fbound'][2], (self.truncSigLen)))
+            self.p2 = int(ppm2p(self,self.parameters['fbound'][1], (self.truncSigLen)))
             self.in_size = int(self.p2-self.p1)
-            # %%
 
 
 
@@ -218,9 +178,9 @@ class Engine():
             y = np.conj(self.dataset)
         else:
             y = self.dataset
-        # y = y[4:,:]
 
-        y = self.normalize(y)
+
+        y = normalize(y)
         ang = np.angle(y[1, :])
         y = y * np.exp(-1 * ang * 1j)
         try:
@@ -264,35 +224,35 @@ class Engine():
                         self.saving_dir + "basis_set")
             np.save(self.saving_dir + "basis_set", self.basisset)
         self.y_test_idx = indx
-        # y_f = fft.fftshift(fft.fft(y, axis=0), axes=0)
 
-        # if self.quality_filt[0] == True:
-        #     cond = np.mean(np.abs(y_f[self.quality_filt[1]:self.quality_filt[2], :]), axis=0)
-        #     # con2 = np.mean(np.abs(y_f[self.quality_filt[3]:self.quality_filt[4], :]), axis=0)
-        #     idx = np.where((cond < 6))[0]
-        #     y = y[0:2 * self.truncSigLen, idx]
-        #     cond = np.mean(np.abs(y_f[self.quality_filt[1]:self.quality_filt[2], :]), axis=0)
-        #     self.y_test_idx = np.where((cond < 6))[0]
         return y,y_test
 
     def data_prep(self):
-        if self.parameters["simulated"]:
-            data = np.load(self.data_dir_ny)
-            y , _, self.ampl_t, _, self.alpha, _ = [data[x] for x in data]
-        else:
-            y, self.y_test = self.data_proc()
-        if self.aug_params is not None:
-            y, _, _, _, _ = self.data_aug(y[0:self.sigLen,:])
+        if self.data_dir is not None:
+            try:
+                self.dataset = scipy.io.loadmat(self.data_dir).get(self.data_name).T
+            except:
+                try:
+                    self.dataset = mat73.loadmat(self.data_dir).get(self.data_name).T
+                except:
+                    try:
+                        self.dataset = np.load(self.data_dir).T
+                    except:
+                        print("couldn't read data")
+
+        y, self.y_test = self.data_proc()
+
         y_f = fft.fftshift(fft.fft(y, axis=0),axes=0)
+
         if self.pre_plot ==True:
-            plt.hist(self.cal_snrf(y_f))
+            plt.hist(cal_snrf(self, y_f))
             plt.show()
-            self.plotppm(fft.fftshift(fft.fft((y[:, 2000]), axis=0)), 1, 8, True, linewidth=1, linestyle='-')
+            plotppm(self, fft.fftshift(fft.fft((y[:, 2000]), axis=0)), 1, 8, True, linewidth=1, linestyle='-')
             plt.show()
 
         self.numOfSample = np.shape(y)[1];
         y_norm = y
-        del y
+        del y, y_f
         self.to_tensor(y_norm)
 
     def data_aug(self,y):
@@ -1313,94 +1273,75 @@ class Engine():
 
     def dotrain(self,enc_num_manual=0):
         if self.MM_plot == True:
-            if 'param' in self.MM_type:
-                if self.MM:
-                    mm = 0
-                    for idx in range(0, self.numOfMM):
-                        if self.MM_conj == True:
-                            x = np.conj(self.MM_model(self.MM_a[idx], 0, 0, 0, self.ppm2f(self.MM_f[idx]), self.MM_d[idx]))
-                        else:
-                            x = (self.MM_model(self.MM_a[idx], 0, 0, 0, self.ppm2f(self.MM_f[idx]), self.MM_d[idx]))
-                        mm += x
-                        if idx == self.numOfMM - 1:
-                            self.plotppm(-10 * idx + fft.fftshift(fft.fft(x)).T, 0, 5, True)
-                        else:
-                            self.plotppm(-10 * idx + fft.fftshift(fft.fft(x)).T, 0, 5, False)
-                    self.savefig("MM")
-                    self.mm = mm.T
-                    Jmrui.write(Jmrui.makeHeader("tesDB", np.size(self.mm, 0), np.size(self.mm, 1), 0.25, 0, 0,
-                                                 1.2322E8), self.mm, self.saving_dir +'_mm.txt')
-        if self.pre_plot == True:
-            self.plot_basis2(self.basisset, 2)
-        if self.tr is True:
-            self.data_prep()
-            autoencoders = []
-            self.tic()
-            self.parameters['gpu'] = "cuda:0"
-            enc_list = [enc_num_manual]
-            if self.parameters['gpu'] == 'cuda:0':
-                gpu = [0]
-            if self.parameters['gpu'] == 'cuda:1':
-                gpu = [1]
-            if self.parameters['gpu'] == 'cuda:2':
-                gpu = [2]
+            plot_MM(self)
+        self.data_prep()
+        autoencoders = []
+        self = tic(self)
+        self.parameters['gpu'] = "cuda:0"
+        enc_list = [enc_num_manual]
+        if self.parameters['gpu'] == 'cuda:0':
+            gpu = [0]
+        if self.parameters['gpu'] == 'cuda:1':
+            gpu = [1]
+        if self.parameters['gpu'] == 'cuda:2':
+            gpu = [2]
 
-            # pl.seed_everything(42)
-            for i in enc_list:
-                self.epoch_dir = self.epoch_dir + str(i)+'/'
-                Path(self.saving_dir + self.epoch_dir).mkdir(parents=True, exist_ok=True)
-                if i==0:
-                    dataloader_train = DataLoader(self.train, batch_size=self.batchsize, shuffle=True, pin_memory=True,
-                               num_workers=self.num_of_workers)
-                    dataloader_test = DataLoader(self.val, batch_size=self.batchsize, pin_memory=True,
-                               num_workers=self.num_of_workers)
+        # pl.seed_everything(42)
+        for i in enc_list:
+            self.epoch_dir = self.epoch_dir + str(i)+'/'
+            Path(self.saving_dir + self.epoch_dir).mkdir(parents=True, exist_ok=True)
+            if i==0:
+                dataloader_train = DataLoader(self.train, batch_size=self.batchsize, shuffle=True, pin_memory=True,
+                           num_workers=self.num_of_workers)
+                dataloader_test = DataLoader(self.val, batch_size=self.batchsize, pin_memory=True,
+                           num_workers=self.num_of_workers)
 
-                else:
-                    # self.train, _ = random_split(self.train, [int(len(self.train) / (self.ens - 1)),
-                    #                                                 len(self.train) - int(
-                    #                                                     len(self.train) / (self.ens - 1))])
-                    dataloader_train = DataLoader(self.train, batch_size=self.batchsize, shuffle=True, pin_memory=True,
-                               num_workers=self.num_of_workers)
-                    dataloader_test = DataLoader(self.val, batch_size=self.batchsize, pin_memory=True,
-                               num_workers=self.num_of_workers)
-                    # self.beta_step /= (self.ens - 1)
-                    # self.max_epoch = int(self.max_epoch * (self.ens - 1))
+            else:
+                # self.train, _ = random_split(self.train, [int(len(self.train) / (self.ens - 1)),
+                #                                                 len(self.train) - int(
+                #                                                     len(self.train) / (self.ens - 1))])
+                dataloader_train = DataLoader(self.train, batch_size=self.batchsize, shuffle=True, pin_memory=True,
+                           num_workers=self.num_of_workers)
+                dataloader_test = DataLoader(self.val, batch_size=self.batchsize, pin_memory=True,
+                           num_workers=self.num_of_workers)
+                # self.beta_step /= (self.ens - 1)
+                # self.max_epoch = int(self.max_epoch * (self.ens - 1))
 
-                logger = TensorBoardLogger('tb-logs', name=self.loging_dir)
-                lr_monitor = LearningRateMonitor(logging_interval='step')
-                if self.parameters['early_stop'][0]:
-                    early_stopping = EarlyStopping('val_recons_loss',patience=self.parameters['early_stop'][1])
-                    trainer= pl.Trainer(max_epochs=self.max_epoch, logger=logger,callbacks=[early_stopping,lr_monitor],accelerator='gpu',devices=gpu)
-                else:
-                    trainer = pl.Trainer(max_epochs=self.max_epoch, logger=logger,callbacks=[lr_monitor],accelerator='gpu',devices=gpu)
-                # trainer= pl.Trainer(gpus=1, max_epochs=self.max_epoch, logger=logger,callbacks=[lr_monitor])
-                logger.save()
-                device = torch.device(self.parameters['gpu'])
-                temp = Encoder_Model(self.depths[i], self.betas[i],self.reg_wei[i],i,self).to(device)
-                if self.parameters["transfer_model_dir"] is not None:
-                    PATH = self.parameters["transfer_model_dir"] + "model_" + str(i) + ".pt"
-                    temp.load_state_dict(torch.load(PATH, map_location=device))
-                    # temp.cuda()
-                try:
-                    temp = temp.load_from_checkpoint(self.parameters["checkpoint_dir"],depth=self.depths[i], beta=self.betas[i],tr_wei=self.reg_wei[i],param=self).to(device)
-                except:
-                    print("check point couldn't be loaded")
-                # x = summary(temp.met.to('cuda:0'), (2, 1024))
+            logger = TensorBoardLogger('tb-logs', name=self.loging_dir)
+            lr_monitor = LearningRateMonitor(logging_interval='step')
+            if self.parameters['early_stop'][0]:
+                early_stopping = EarlyStopping('val_recons_loss',patience=self.parameters['early_stop'][1])
+                trainer= pl.Trainer(max_epochs=self.max_epoch, logger=logger,callbacks=[early_stopping,lr_monitor],accelerator='gpu',devices=gpu)
+            else:
+                trainer = pl.Trainer(max_epochs=self.max_epoch, logger=logger,callbacks=[lr_monitor],accelerator='gpu',devices=gpu)
+            # trainer= pl.Trainer(gpus=1, max_epochs=self.max_epoch, logger=logger,callbacks=[lr_monitor])
+            logger.save()
+            device = torch.device(self.parameters['gpu'])
+            temp = Encoder_Model(self.depths[i], self.betas[i],self.reg_wei[i],i,self).to(device)
+            if self.parameters["transfer_model_dir"] is not None:
+                PATH = self.parameters["transfer_model_dir"] + "model_" + str(i) + ".pt"
+                temp.load_state_dict(torch.load(PATH, map_location=device))
+                # temp.cuda()
+            try:
+                temp = temp.load_from_checkpoint(self.parameters["checkpoint_dir"],depth=self.depths[i], beta=self.betas[i],tr_wei=self.reg_wei[i],param=self).to(device)
+            except:
+                print("check point couldn't be loaded")
+            # x = summary(temp.met.to('cuda:0'), (2, 1024))
 
-                torch.set_num_threads(16)
-                print(torch.get_num_threads())
+            torch.set_num_threads(16)
+            print(torch.get_num_threads())
 
-                trainer.fit(temp, dataloader_train, dataloader_test)
-                autoencoders.append(temp)
-                PATH = self.saving_dir + "model_"+ str(i) + ".pt"
-                # Save
-                torch.save(temp.state_dict(), PATH)
-                del temp
-                del trainer
-                gc.collect()
-                torch.cuda.empty_cache()
-                torch.cuda.memory_summary(device=device, abbreviated=False)
-            self.toc("trining_time")
+            trainer.fit(temp, dataloader_train, dataloader_test)
+            autoencoders.append(temp)
+            PATH = self.saving_dir + "model_"+ str(i) + ".pt"
+            # Save
+            torch.save(temp.state_dict(), PATH)
+            del temp
+            del trainer
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.memory_summary(device=device, abbreviated=False)
+        self.toc("trining_time")
     def dotest(self):
         print("evaluation")
         self.autoencoders = []
