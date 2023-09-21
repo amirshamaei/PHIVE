@@ -22,7 +22,8 @@ import numpy.fft as fft
 from utils import Jmrui, watrem
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 from Model import Encoder_Model
-from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic
+from utils.DataLoader_MRSI import MRSI_Dataset
+from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic, zero_fill_torch
 
 fontsize = 16
 
@@ -263,8 +264,8 @@ class Engine():
         if self.parameters["simulated"] is False:
             y_test = self.y_test[0:self.truncSigLen, :].astype('complex64')
             self.y_test_trun = torch.from_numpy(y_test[:, 0:self.numOfSample].T)
-            self.train = TensorDataset(self.y_trun)
-            self.val = TensorDataset(self.y_test_trun)
+            self.train = MRSI_Dataset(self.y_trun)
+            self.val = MRSI_Dataset(self.y_test_trun)
         else:
             self.y_test_trun = self.y_trun
             labels = torch.from_numpy(np.hstack((self.ampl_t,self.alpha)))
@@ -275,11 +276,11 @@ class Engine():
     def inputSig(self,x,p1=None,p2=None):
         if self.parameters['domain'] == 'freq':
             if self.parameters['zero_fill'][0] == True:
-                x = self.zero_fill_torch(x,1,self.parameters['zero_fill'][1])
+                x = zero_fill_torch(self, x,1,self.parameters['zero_fill'][1])
             x = torch.fft.fftshift(torch.fft.fft(x, dim=1), dim=1)
             if p1==None and p2==None:
-                p1 = int(self.ppm2p(self.parameters['fbound'][2], (self.truncSigLen)))
-                p2 = int(self.ppm2p(self.parameters['fbound'][1], (self.truncSigLen)))
+                p1 = int(ppm2p(self,self.parameters['fbound'][2], (self.truncSigLen)))
+                p2 = int(ppm2p(self,self.parameters['fbound'][1], (self.truncSigLen)))
 
             x = x[:, p1:p2]
             if self.in_shape == 'complex':

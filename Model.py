@@ -22,6 +22,9 @@ from Models.transformer import Transformer, TransformerB
 from torchcubicspline import(natural_cubic_spline_coeffs,
                              NaturalCubicSpline)
 
+from utils.utils import ppm2p, zero_fill_torch
+
+
 class Encoder_Model(pl.LightningModule):
     def __init__(self,depth, beta, tr_wei, i,param):
         super().__init__()
@@ -113,8 +116,8 @@ class Encoder_Model(pl.LightningModule):
         if self.param.parameters['zero_fill'][0] == True:
             self.param.truncSigLen = self.param.parameters['zero_fill'][1]
         if self.param.parameters['domain'] == 'freq':
-            self.p1 = int(self.param.ppm2p(self.param.parameters['fbound'][2], (self.param.truncSigLen)))
-            self.p2 = int(self.param.ppm2p(self.param.parameters['fbound'][1], (self.param.truncSigLen)))
+            self.p1 = int(ppm2p(self.param,self.param.parameters['fbound'][2], (self.param.truncSigLen)))
+            self.p2 = int(ppm2p(self.param,self.param.parameters['fbound'][1], (self.param.truncSigLen)))
             self.in_size = int(self.p2-self.p1)
 
 
@@ -299,12 +302,12 @@ class Encoder_Model(pl.LightningModule):
         div_fac = 1
         if self.param.parameters['fbound'][0]:
             if self.param.parameters['zero_fill'][0] == True:
-                recons = self.param.zero_fill_torch(recons,1,self.param.parameters['zero_fill'][1])
-                input = self.param.zero_fill_torch(input, 1, self.param.parameters['zero_fill'][1])
+                recons = zero_fill_torch(self,recons,1,self.param.parameters['zero_fill'][1])
+                input = zero_fill_torch(self,input, 1, self.param.parameters['zero_fill'][1])
             recons_f = torch.fft.fftshift(torch.fft.fft(recons[:,:self.param.truncSigLen], dim=1), dim=1)
             input_f = torch.fft.fftshift(torch.fft.fft(input, dim=1), dim=1)
-            p1 = int(self.param.ppm2p(self.param.parameters['fbound'][2], (self.param.truncSigLen)))
-            p2 = int(self.param.ppm2p(self.param.parameters['fbound'][1], (self.param.truncSigLen)))
+            p1 = int(ppm2p(self.param,self.param.parameters['fbound'][2], (self.param.truncSigLen)))
+            p2 = int(ppm2p(self.param,self.param.parameters['fbound'][1], (self.param.truncSigLen)))
             loss_real = self.criterion(recons_f.real[:, p1:p2]+b_spline_rec,
                                        input_f.real[:, p1:p2])
             loss_imag = 0
