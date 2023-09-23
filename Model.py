@@ -22,7 +22,7 @@ from Models.transformer import Transformer, TransformerB
 from torchcubicspline import(natural_cubic_spline_coeffs,
                              NaturalCubicSpline)
 
-from utils.utils import ppm2p, zero_fill_torch
+from utils.utils import ppm2p, zero_fill_torch, plot_basis, plotppm, savefig
 
 
 class Encoder_Model(pl.LightningModule):
@@ -424,9 +424,9 @@ class Encoder_Model(pl.LightningModule):
                 rang = [1.8, 4]
                 # id= 10
                 # plotppm(np.fft.fftshift(np.fft.fft((y_n.T)).T), 0, 5,False, linewidth=0.3, linestyle='-')
-                p1 = int(self.param.ppm2p(rang[0], (self.param.y_test_trun.shape[1])))
-                p2 = int(self.param.ppm2p(rang[1], (self.param.y_test_trun.shape[1])))
-                self.param.plotppm(np.fft.fftshift(np.fft.fft((self.param.y_test_trun[id, :])).T)[p2:p1], rang[0], rang[1], False, linewidth=0.3, linestyle='-',label="y_test")
+                p1 = int(ppm2p(self.param,rang[0], (self.param.y_test_trun.shape[1])))
+                p2 = int(ppm2p(self.param,rang[1], (self.param.y_test_trun.shape[1])))
+                plotppm(self.param,np.fft.fftshift(np.fft.fft((self.param.y_test_trun[id, :])).T)[p2:p1], rang[0], rang[1], False, linewidth=0.3, linestyle='-',label="y_test")
                 # cond_ = random.randint(0,self.cond_max-1)
                 # self.param.parameters['spline_reg'] = cond_
                 # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(y_trun[id, :])).T)[250:450], linewidth=0.3)
@@ -437,28 +437,28 @@ class Encoder_Model(pl.LightningModule):
                 if self.param.parameters["decode"] == True:
                     if self.param.in_shape == 'real':
                         decoded = decoded[:,0,:]
-                        self.param.plotppm(40+np.fft.fftshift(np.fft.rfft(
+                        plotppm(self.param,40+np.fft.fftshift(np.fft.rfft(
                             (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
                                 True, linewidth=1, linestyle='--',label="decoded")
                     else:
                         decoded = decoded[:,0,:] + decoded[:,1,:]*1j
-                        self.param.plotppm(40+np.fft.fftshift(np.fft.fft(
+                        plotppm(self.param,40+np.fft.fftshift(np.fft.fft(
                             (decoded.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1],
                                 True, linewidth=1, linestyle='--',label="decoded")
                 rec_sig = rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen]
 
 
-                self.param.plotppm(np.fft.fftshift(np.fft.fft(
+                plotppm(self.param,np.fft.fftshift(np.fft.fft(
                     (rec_sig)).T)[p2:p1], rang[0], rang[1],
                         False, linewidth=1, linestyle='--',label="rec_sig")
                 plt.title("#Epoch: " + str(self.current_epoch))
                 plt.legend()
-                self.param.savefig(self.param.epoch_dir+"decoded_paper1_1_epoch_" + "_"+ str(self.tr_wei))
+                savefig(self.param,self.param.epoch_dir+"decoded_paper1_1_epoch_" + "_"+ str(self.tr_wei))
                 # self.param.savefig(
                 #     self.param.epoch_dir + "decoded_paper1_1_epoch_" + str(self.current_epoch) + "_" + str(self.tr_wei))
 
                 if self.param.MM == True:
-                    self.param.plotppm(5+10*np.fft.fftshift(np.fft.fft(((mm_v).cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1], False, linewidth=1,linestyle='--',label="mm_v")
+                    plotppm(self.param,5+10*np.fft.fftshift(np.fft.fft(((mm_v).cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T)[p2:p1], rang[0], rang[1], False, linewidth=1,linestyle='--',label="mm_v")
 
                 # self.param.plotppm(30+np.fft.fftshift(np.fft.fft(
                 #     (rec_sig)).T)[p2:p1], rang[0], rang[1],
@@ -473,12 +473,14 @@ class Encoder_Model(pl.LightningModule):
                 #     (self.param.y_test_trun[id, :]-rec_signal.cpu().detach().numpy()[0, 0:self.param.truncSigLen])).T), rang[0], rang[1],
                 #         True, linewidth=1, linestyle='--')
                 sns.despine()
-                self.param.plot_basis(10*(enc).cpu().detach().numpy(), fr.cpu().detach().numpy(), damp.cpu().detach().numpy(), ph.cpu().detach().numpy(),rng=rang)
+                plot_basis(self.param,10*(enc).cpu().detach().numpy(),
+                           fr.cpu().detach().numpy(), damp.cpu().detach().numpy(),
+                           ph.cpu().detach().numpy(),rng=rang)
                 # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(rec_signal.cpu().detach().numpy()[0,0:trunc])).T)[250:450], linewidth=1,linestyle='--')
                 plt.title("#Epoch: " + str(self.current_epoch))
                 plt.legend()
                 # self.param.savefig(self.param.epoch_dir+"fit_paper1_1_epoch_" + str(self.current_epoch) +"_"+ str(self.tr_wei))
-                self.param.savefig(
+                savefig(self.param,
                     self.param.epoch_dir + "fit_paper1_1_epoch_" + "_" + str(self.tr_wei))
 
                 if self.param.parameters['spline']:
@@ -489,14 +491,14 @@ class Encoder_Model(pl.LightningModule):
                     plt.plot(spline_rec.T)
                     # self.param.savefig(self.param.epoch_dir+"spline")
                     y_test = (self.param.y_test_trun[id, :]).unsqueeze(0)
-                    y_test = self.param.zero_fill_torch(y_test, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
+                    y_test = zero_fill_torch(self.param,y_test, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
                     plt.plot(torch.fft.fftshift(torch.fft.fft((y_test)).T)[self.p1:self.p2])
-                    rec_sig = self.param.zero_fill_torch(rec_signal, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
+                    rec_sig = zero_fill_torch(self.param,rec_signal, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
                     plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline_rec.cpu().detach().T)
                     # plt.title(f'condition:{cond_}')
+                    # savefig(self.param, self.param.epoch_dir + "result")
                     tensorboard = self.logger.experiment
                     tensorboard.add_figure("recons", fig, self.current_epoch)
-                    self.param.savefig(self.param.epoch_dir + "result")
         except:
             print("problem in plottuimg during validation")
         self.log("val_acc", results['loss'])

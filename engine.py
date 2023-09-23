@@ -23,7 +23,7 @@ from utils import Jmrui, watrem
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
 from Model import Encoder_Model
 from utils.DataLoader_MRSI import MRSI_Dataset
-from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic, zero_fill_torch
+from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic, zero_fill_torch, toc
 
 fontsize = 16
 
@@ -72,7 +72,7 @@ class Engine():
                 if parameters['basis_conj']:
                     self.basisset = np.conj(self.basisset)
                 if parameters['norm_basis']:
-                    self.basisset = self.normalize(self.basisset)
+                    self.basisset = normalize(self.basisset)
             except:
                 print("couldn't read basisset")
         self.wr = parameters['wr']
@@ -255,17 +255,14 @@ class Engine():
         y_norm = y
         del y, y_f
         self.to_tensor(y_norm)
-
-    def data_aug(self,y):
-        return self.get_augment(y, self.aug_params[0], self.aug_params[1], self.aug_params[2], self.aug_params[3], self.aug_params[4], self.aug_params[5])
     def to_tensor(self,y_norm):
         y_trun = y_norm[0:self.truncSigLen, :].astype('complex64')
         self.y_trun = torch.from_numpy(y_trun[:, 0:self.numOfSample].T)
         if self.parameters["simulated"] is False:
             y_test = self.y_test[0:self.truncSigLen, :].astype('complex64')
             self.y_test_trun = torch.from_numpy(y_test[:, 0:self.numOfSample].T)
-            self.train = MRSI_Dataset(self.y_trun)
-            self.val = MRSI_Dataset(self.y_test_trun)
+            self.train = MRSI_Dataset(self.y_trun, self)
+            self.val = MRSI_Dataset(self.y_test_trun, self)
         else:
             self.y_test_trun = self.y_trun
             labels = torch.from_numpy(np.hstack((self.ampl_t,self.alpha)))
@@ -335,7 +332,7 @@ class Engine():
         y_test = y_test.astype('complex64')
         y_test = torch.from_numpy(y_test)
         # print(y_test.size())
-        self.tic()
+        tic(self)
 
         # autoencoder = self.autoencoders[0]
         # if crlb == True:
@@ -1273,11 +1270,11 @@ class Engine():
                 self.savefig(path + str(ll) + "result")
 
     def dotrain(self,enc_num_manual=0):
+        self = tic(self)
         if self.MM_plot == True:
             plot_MM(self)
         self.data_prep()
         autoencoders = []
-        self = tic(self)
         self.parameters['gpu'] = "cuda:0"
         enc_list = [enc_num_manual]
         if self.parameters['gpu'] == 'cuda:0':
@@ -1342,7 +1339,7 @@ class Engine():
             gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.memory_summary(device=device, abbreviated=False)
-        self.toc("trining_time")
+        toc(self,"trining_time")
     def dotest(self):
         print("evaluation")
         self.autoencoders = []

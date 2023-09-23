@@ -6,8 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy.fft as fft
-
-from utils import Jmrui
+from . import Jmrui
 
 fontsize = 16
 def relu(self, x):
@@ -227,30 +226,30 @@ def plotppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-',label=None,
     # gca = plt.plot(x,sig[p2:p1,0],linewidth=linewidth, linestyle=linestyle)
 
 def plot_basis2(self, basisset, ampl):
-    p1 = int(self.ppm2p(4, len(basisset)))
-    p2 = int(self.ppm2p(1, len(basisset)))
+    p1 = int(ppm2p(self,4, len(basisset)))
+    p2 = int(ppm2p(self,1, len(basisset)))
     for i in range(0, len(basisset.T) - 1):
-        self.plotppm(+100* i + fft.fftshift(fft.fft(ampl * self.basisset[:, i]))[p1:p2], 1, 4, False,label=self.met_name[i])
-    self.plotppm(100 * (i + 1) + fft.fftshift(fft.fft(self.basisset[:, i + 1]))[p1:p2], 1, 4, True,label=self.met_name[i])
+        plotppm(self,+100* i + fft.fftshift(fft.fft(ampl * self.basisset[:, i]))[p1:p2], 1, 4, False,label=self.met_name[i])
+    plotppm(self,100 * (i + 1) + fft.fftshift(fft.fft(self.basisset[:, i + 1]))[p1:p2], 1, 4, True,label=self.met_name[i])
     # plt.legend(self.met_name)
-    self.savefig("Basis" + str(ampl),plt_tight=True)
-    plt.tick_params(axis='both', labelsize=fontsize)
+    savefig(self,"Basis" + str(ampl),plt_tight=True)
+    plt.tick_params(labelsize=fontsize)
 
 
 def plot_basis(self, ampl, fr, damp, ph, rng=[1,5]):
     reve = False
-    p1 = int(self.ppm2p(rng[0], len(self.basisset)))
-    p2 = int(self.ppm2p(rng[1], len(self.basisset)))
+    p1 = int(ppm2p(self,rng[0], len(self.basisset)))
+    p2 = int(ppm2p(self,rng[1], len(self.basisset)))
     for i in range(0, len(self.basisset.T)):
         vv=fft.fftshift(fft.fft(ampl[0, i] * self.basisset[:len(self.t), i]*np.exp(-2 * np.pi *1j* fr * self.t.T)*np.exp(-1*damp*self.t.T)))
         if i ==len(self.basisset.T)-1:
             reve= True
-        ax = self.plotppm(-4 * (i+2) + vv.T[p2:p1], rng[0], rng[1], reve)
+        ax = plotppm(self,-4 * (i+2) + vv.T[p2:p1], rng[0], rng[1], reve)
         sns.despine(left=True,right=True,top=True)
         plt.text(.1, -4 * (i+2), self.met_name[i],fontsize=8)
         ax.tick_params(left=False)
         ax.set(yticklabels=[])
-    plt.tick_params(axis='both', labelsize=fontsize)
+    plt.tick_params(labelsize=fontsize)
 
 
 def Lornz(self, ampl, f, d, ph ,Cra, Crfr, Crd):
@@ -368,4 +367,4 @@ def plot_MM(self):
             Jmrui.write(Jmrui.makeHeader("tesDB", np.size(self.mm, 0), np.size(self.mm, 1), 0.25, 0, 0,
                                          1.2322E8), self.mm, self.saving_dir + '_mm.txt')
 
-    self.plot_basis2(self.basisset, 2)
+    plot_basis2(self,self.basisset, 2)
