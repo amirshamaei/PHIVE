@@ -119,7 +119,7 @@ class Encoder_Model(pl.LightningModule):
             self.p1 = int(ppm2p(self.param,self.param.parameters['fbound'][2], (self.param.truncSigLen)))
             self.p2 = int(ppm2p(self.param,self.param.parameters['fbound'][1], (self.param.truncSigLen)))
             self.in_size = int(self.p2-self.p1)
-
+        self.getaug_vmap = torch.vmap(self.get_augment, in_dims=(0, None, None, None, None),randomness='different')
 
 
     def sign(self,t,eps):
@@ -382,6 +382,11 @@ class Encoder_Model(pl.LightningModule):
             x, label = batch[0],batch[1]
             ampl_batch, alpha_batch = label[:, 0:-1], label[:, -1]
 
+        x = self.getaug_vmap(x,
+                              self.param.parameters['aug_params'][0],
+                              self.param.parameters['aug_params'][1],
+                              self.param.parameters['aug_params'][2],
+                              self.param.parameters['aug_params'][3])
         # cond = random.randint(0,self.cond_max-1)
         dec_real, enct, enc,_,damp,_,mm,dec,decoded,b_spline_rec,spline_coeff = self(x)
         # self.param.parameters['spline_reg'] = cond
@@ -600,4 +605,19 @@ class Encoder_Model(pl.LightningModule):
         t = torch.linspace(dx, dx+self.in_size-1, self.in_size).to(coeff.device)
         out = spline.evaluate(t)
         return out.T
+
+    def get_augment(self, signal, f_band, ph_band, d_band, noise_level):
+
+        shift = f_band * torch.rand(1) - (f_band / 2)
+        ph = ph_band * torch.rand(1) * math.pi - ((ph_band / 2) * math.pi)
+        d = torch.rand(1) * d_band
+
+        freq = -2 * math.pi * shift
+
+        y = signal * torch.exp(1j * (ph.cuda() + freq.cuda() * self.t.T))  # t is the time vector
+        y = y * torch.exp(-d.cuda() * self.t.T)
+
+        noise = (torch.randn(1, len(signal)) +
+                 1j * torch.randn(1, len(signal))) * noise_level  # example noise level
+        return (y + noise.cuda()).squeeze()
 

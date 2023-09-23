@@ -32,7 +32,7 @@
       "test_name" : "testDBjmrui",
       "sim_params" : null,
       "test_params" : ["min_c","max_c",6,15,0.1,1,128],
-      "aug_params" : null,
+      "aug_params" : [6, 0.1,5,0],
       "quality_filt" : [false, 2450, 2800],
       "tr_prc" : 0.9,
       "max_epoch": 400,

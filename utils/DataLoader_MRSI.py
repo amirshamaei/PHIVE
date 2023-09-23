@@ -2,10 +2,10 @@ import math
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, TensorDataset
 
 
-class MRSI_Dataset(Dataset):
+class MRSI_Dataset(TensorDataset):
     def __init__(self,data,engine):
         self.engine = engine
         # initialize dataset
@@ -16,7 +16,7 @@ class MRSI_Dataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.data[idx]
-        if self.engine.parameters['aug_params']:
+        if False:#self.engine.parameters['aug_params']:
             sample = self.get_augment(sample,
                                       self.engine.parameters['aug_params'][0],
                                       self.engine.parameters['aug_params'][1],

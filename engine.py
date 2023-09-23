@@ -261,8 +261,10 @@ class Engine():
         if self.parameters["simulated"] is False:
             y_test = self.y_test[0:self.truncSigLen, :].astype('complex64')
             self.y_test_trun = torch.from_numpy(y_test[:, 0:self.numOfSample].T)
-            self.train = MRSI_Dataset(self.y_trun, self)
-            self.val = MRSI_Dataset(self.y_test_trun, self)
+            # self.train = MRSI_Dataset(self.y_trun, self)
+            # self.val = MRSI_Dataset(self.y_test_trun, self)
+            self.train = TensorDataset(self.y_trun)
+            self.val = TensorDataset(self.y_test_trun)
         else:
             self.y_test_trun = self.y_trun
             labels = torch.from_numpy(np.hstack((self.ampl_t,self.alpha)))
