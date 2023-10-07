@@ -15,6 +15,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 
 from Models.UNET import ConvNet_ENC, ConvNet_DEC
+import wandb
 
 
 from torch.autograd.functional import jacobian
@@ -23,9 +24,11 @@ from torchcubicspline import(natural_cubic_spline_coeffs,
                              NaturalCubicSpline)
 
 from utils.utils import ppm2p, zero_fill_torch, plot_basis, plotppm, savefig
+from pytorch_memlab import LineProfiler, profile
 
 
 class Encoder_Model(pl.LightningModule):
+
     def __init__(self,depth, beta, tr_wei, i,param):
         super().__init__()
         self.ens_indx = i
@@ -208,6 +211,8 @@ class Encoder_Model(pl.LightningModule):
                     mm_rec = torch.conj(mm_rec)
 
         return mm_rec
+
+    @profile
     def forward(self, x, cond = 0):
         decoded = self.param.inputSig(x)
 
@@ -502,8 +507,9 @@ class Encoder_Model(pl.LightningModule):
                     plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline_rec.cpu().detach().T)
                     # plt.title(f'condition:{cond_}')
                     # savefig(self.param, self.param.epoch_dir + "result")
-                    tensorboard = self.logger.experiment
-                    tensorboard.add_figure("recons", fig, self.current_epoch)
+                    # tensorboard = self.logger.experiment
+                    # tensorboard.add_figure("recons", fig, self.current_epoch)
+                    self.logger.log_image(key="samples", images=[fig])
         except:
             print("problem in plottuimg during validation")
         self.log("val_acc", results['loss'])

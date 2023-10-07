@@ -47,7 +47,7 @@ def read_mat_files_from_folders_test(root_folder, rng=range(1, 8)):
 
 if __name__ == "__main__":
     root_folder = ""  # Replace with the path to your main folder containing HC0x_M01 subfolders
-    # all_data,sizes = read_mat_files_from_folders(root_folder,rng=range(1, 8))
+    all_data,sizes = read_mat_files_from_folders(root_folder,rng=range(1, 8))
     # np.save('sizes', np.asarray(sizes), allow_pickle=True)
     # np.save('train_data',np.concatenate(all_data,0),allow_pickle=True)
 
