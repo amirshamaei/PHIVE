@@ -1283,7 +1283,7 @@ class Engine():
                 plt.plot(spline[0,id])
                 self.savefig(path + str(ll) + "result")
 
-    def dotrain(self,enc_num_manual=0):
+    def dotrain(self,enc_num_manual=0,train_name='no name'):
         self = tic(self)
         if self.MM_plot == True:
             plot_MM(self)
@@ -1321,7 +1321,7 @@ class Engine():
                 # self.max_epoch = int(self.max_epoch * (self.ens - 1))
 
             # logger = TensorBoardLogger('tb-logs', name=self.loging_dir)
-            logger = WandbLogger(project='dlfit')
+            logger = WandbLogger(project='dlfit',name=train_name)
             lr_monitor = LearningRateMonitor(logging_interval='step')
             if self.parameters['early_stop'][0]:
                 early_stopping = EarlyStopping('val_recons_loss',patience=self.parameters['early_stop'][1])

@@ -93,11 +93,12 @@ class Encoder_Model(pl.LightningModule):
         else:
             self.enc_out_ = self.enc_out
 
-        # self.embed = nn.Embedding(2, 128,_freeze=False)
-        # self.cond_max = 2
-        # self.embed = []
-        # for i in range(self.cond_max):
-        #     self.embed.append(nn.Linear(self.param.parameters['numofsplines'],self.param.parameters['numofsplines']).cuda(self.param.parameters['gpu']))
+        self.cond_max = 1
+        # self.one_hot = nn.Embedding(2, 8,_freeze=True)
+
+        self.embed = []
+        for i in range(self.cond_max):
+            self.embed.append(nn.Linear(self.param.parameters['numofsplines'],8+i).cuda(self.param.parameters['gpu']))
         # self.one_hot = torch.eye(self.cond_max,requires_grad=False).cuda(self.param.parameters['gpu'])
         if param.enc_type == 'conv':
             self.met = ConvNet_ENC(in_chanel=self.in_chanel,latent_Size=self.enc_out_, dropout=self.dropout,freeze_enc=self.param.parameters["freeze_enc"])
@@ -149,13 +150,10 @@ class Encoder_Model(pl.LightningModule):
         # damp = torch.clamp(damp, max=30)
         dec = self.lc_met(fr, damp,ph,ample_met,ample_MM,mm_f,mm_damp, mm_phase)
         mm_rec = torch.Tensor(0)
-        b_spline_rec = 0
-        if self.param.parameters['spline']:
-            b_spline_rec = self.bspline(spline_coeff)
         if self.param.MM:
             mm_rec = self.lc_mm(fr, damp, ph, ample_met, ample_MM, mm_f, mm_damp, mm_phase)
 
-        return fr, damp, ph, mm_rec, dec, ample_met, mm_phase,b_spline_rec,spline_coeff
+        return fr, damp, ph, mm_rec, dec, ample_met, mm_phase,spline_coeff
 
     def get_model_parameters(self,enc):
         fr = torch.unsqueeze(enc[:, -3],1)
@@ -221,8 +219,11 @@ class Encoder_Model(pl.LightningModule):
         latent = self.met(decoded)
 
         # embed_cond = self.embed.weight[cond]
-        # embed_cond = self.one_hot[cond]
-        # enct = self.met.regres(torch.concatenate([latent.flatten(1),embed_cond.unsqueeze(0).repeat(x.shape[0],1)],1))
+        # embed_cond = self.one_hot(cond.to(x.device))
+        # if len(embed_cond.shape)<2:
+        #     embed_cond = embed_cond.unsqueeze(0)
+        # latent = torch.concatenate([latent.flatten(1),embed_cond],dim=1)
+        # latent = latent*embed_cond.unsqueeze(-1)
         enct = self.met.regres(latent)
         if self.beta != 0:
             soft_0 = self.act(enct[:, 0:self.param.numOfSig+self.param.numOfMM])
@@ -237,9 +238,13 @@ class Encoder_Model(pl.LightningModule):
 
         if self.param.MM_constr == True:
             self.tr = (self.sigm(enc[:,-1] - 5))
-            fr, damp, ph, mm_rec, dec, ample_met, mm_phase,b_spline_rec,spline_coeff = self.model_decoder(enc[:, 0:-1])
+            fr, damp, ph, mm_rec, dec, ample_met, mm_phase,spline_coeff = self.model_decoder(enc[:, 0:-1])
         else:
-            fr, damp, ph, mm_rec, dec,ample_met, mm_phase,b_spline_rec,spline_coeff = self.model_decoder(enc)
+            fr, damp, ph, mm_rec, dec,ample_met, mm_phase,spline_coeff = self.model_decoder(enc)
+
+        b_spline_rec = 0
+        if self.param.parameters['spline']:
+            b_spline_rec = self.bspline(spline_coeff,cond)
 
         if self.param.parameters["decode"]:
             decoded = self.decode(latent)
@@ -280,6 +285,7 @@ class Encoder_Model(pl.LightningModule):
         ampl_l = args[7]
         b_spline_rec = args[8]
         spline_coeff = args[9]
+        cond = args[10]
         # Account for the minibatch samples from the dataset
         # cut_signal = args[7]
         # cut_dec =args[8]
@@ -333,7 +339,7 @@ class Encoder_Model(pl.LightningModule):
         self.log("recons_loss", recons_loss)
         spline_loss=torch.linalg.vector_norm(spline_coeff[:,:-1]-spline_coeff[:,1:])#
         self.log("spline_loss", spline_loss)#self.param.parameters['spline_reg']*
-        loss = met_loss + recons_loss + self.param.parameters['spline_reg'][self.ens_indx]*spline_loss#/(spline_coeff.shape[0]/32)
+        loss = met_loss + recons_loss + (self.param.parameters['spline_reg'][self.ens_indx]*spline_loss)#/(spline_coeff.shape[0]/32)
 
         if self.beta!=0:
             # - mu ** 2
@@ -381,7 +387,7 @@ class Encoder_Model(pl.LightningModule):
             self.log("supervision_loss", supervision_loss)
             loss += supervision_loss
         return loss,recons_loss
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx,cond=None):
         if self.param.parameters["simulated"] is False:
             x = batch[0]
             ampl_batch = 0
@@ -395,15 +401,17 @@ class Encoder_Model(pl.LightningModule):
                               self.param.parameters['aug_params'][2],
                               self.param.parameters['aug_params'][3])
         # cond = random.randint(0,self.cond_max-1)
-        dec_real, enct, enc,_,damp,_,mm,dec,decoded,b_spline_rec,spline_coeff = self(x)
+        if cond == None:
+            cond = torch.randint(0, self.cond_max, (1,))
+        dec_real, enct, enc,_,damp,_,mm,dec,decoded,b_spline_rec,spline_coeff = self(x,cond)
         # self.param.parameters['spline_reg'] = cond
         # mu = enct[:, 0:self.param.numOfSig]
         # logvar = enct[:, self.param.numOfSig:2*(self.param.numOfSig)]
         mu = enct[:, 0:self.enc_out]
         logvar = enct[:, self.enc_out:2*(self.enc_out)]
-        loss_mse,recons_loss = self.loss_function(dec, x, mu,logvar,mm,decoded,ampl_batch,enc,b_spline_rec,spline_coeff)
+        loss_mse,recons_loss = self.loss_function(dec, x, mu,logvar,mm,decoded,ampl_batch,enc,b_spline_rec,spline_coeff,cond)
         self.training_step_outputs.append(loss_mse)
-        self.log('damp',damp.mean())
+        self.log('damp',damp.mean(),prog_bar=True)
         return {'loss': loss_mse,'recons_loss':recons_loss}
 
     def validation_step(self, batch, batch_idx):
@@ -422,7 +430,7 @@ class Encoder_Model(pl.LightningModule):
             # stot = (ampl_batch[:,0:self.param.numOfSig] - mean)
             # r2 = 1-(torch.sum(error**2,dim=0)/torch.sum(stot**2,dim=0))
 
-        results = self.training_step(batch, batch_idx)
+        results = self.training_step(batch, batch_idx,cond=0)
         try:
             if (self.current_epoch % self.param.parameters['val_freq'] == 0 and batch_idx == 0):
                 # id = int(np.random.rand() * 300)
@@ -439,13 +447,14 @@ class Encoder_Model(pl.LightningModule):
                 p1 = int(ppm2p(self.param,rang[0], (self.param.y_test_trun.shape[1])))
                 p2 = int(ppm2p(self.param,rang[1], (self.param.y_test_trun.shape[1])))
                 plotppm(self.param,np.fft.fftshift(np.fft.fft((self.param.y_test_trun[id, :])).T)[p2:p1], rang[0], rang[1], False, linewidth=0.3, linestyle='-',label="y_test")
-                # cond_ = random.randint(0,self.cond_max-1)
+                cond = torch.randint(0, self.cond_max, (self.param.y_test_trun.shape[0],))
                 # self.param.parameters['spline_reg'] = cond_
                 # plt.plot(np.fft.fftshift(np.fft.fft(np.conj(y_trun[id, :])).T)[250:450], linewidth=0.3)
-                rec_signal,_,enc, fr, damp, ph,mm_v,_,decoded, spline_rec,spline_coeff = self(torch.unsqueeze(self.param.y_test_trun[id, :], 0).cuda())
+                rec_signal,_,enc, fr, damp, ph,mm_v,_,decoded, spline_rec,spline_coeff = self(torch.unsqueeze(self.param.y_test_trun[id, :], 0).cuda(),cond[id])
                 spline_loss = torch.linalg.vector_norm(spline_coeff[:, :-1] - spline_coeff[:, 1:])  #
                 # self.log(f"spline_loss_val_{cond_}", spline_loss)
                 # plotppm(np.fft.fftshift(np.fft.fft(((rec_signal).cpu().detach().numpy()[0,0:truncSigLen])).T), 0, 5,False, linewidth=1, linestyle='--')
+                plt.title(cond[id])
                 if self.param.parameters["decode"] == True:
                     if self.param.in_shape == 'real':
                         decoded = decoded[:,0,:]
@@ -507,7 +516,7 @@ class Encoder_Model(pl.LightningModule):
                     plt.plot(torch.fft.fftshift(torch.fft.fft((y_test)).T)[self.p1:self.p2])
                     rec_sig = zero_fill_torch(self.param,rec_signal, 1, self.param.parameters['zero_fill'][1]).cpu().detach()
                     plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline_rec.cpu().detach().T)
-                    # plt.title(f'condition:{cond_}')
+                    plt.title(f'condition:{cond[id]}')
                     # savefig(self.param, self.param.epoch_dir + "result")
                     # tensorboard = self.logger.experiment
                     # tensorboard.add_figure("recons", fig, self.current_epoch)
@@ -598,9 +607,9 @@ class Encoder_Model(pl.LightningModule):
             crlb = crlb/torch.abs(enc[:,0:-1])
         return crlb
 
-    def bspline(self,coeff):
+    def bspline(self,coeff,cond):
         # cond = self.param.parameters['spline_reg']
-        # coeff = self.embed[cond](coeff)
+        coeff = self.embed[cond](coeff)
         length, batch = coeff.permute(1,0).shape
         # length = int(length/(cond+1))
         # coeff_ = coeff[:,0::(cond+1)]

@@ -89,7 +89,7 @@
       "MM_a":[],
       "spline" : true,
       "numofsplines": 8,
-      "spline_reg": [0.001,0.001,0.001,0.001,0.001,0.001],
+      "spline_reg": [0.0005,0.0005,0.0005,0.0005,0.0005,0.0005],
       "met_name": ["Cr+PCr","GPC","Gln","Ins","NAAG","NAA","Glu"],
       "min_c":null,
       "max_c":null,
