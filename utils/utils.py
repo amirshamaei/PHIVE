@@ -87,8 +87,11 @@ def loadModel(autoencoder, path):
     return autoencoder.load_state_dict(torch.load(path, map_location=torch.device('cpu')))
 
 def cal_snr(self,data, endpoints=128,offset=0):
-    return np.abs(data[0, :]) / np.std(data.real[-(offset + endpoints):-(offset+1), :], axis=0)
+    return np.abs(data[0, :]) / (np.std(data.real[-(offset + endpoints):-(offset+1), :], axis=0)+1e-12)
 
+def safe_elementwise_division(A, B):
+    # Perform element-wise division where B is not zero, else set to zero
+    return np.where(B != 0, A / B, 0)
 def  savefig(self, path, plt_tight=True):
     # plt.ioff()
     if plt_tight:
@@ -201,7 +204,7 @@ def plotsppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-', color=Non
         plt.gca().invert_xaxis()
 
 def normalize(inp):
-    return (np.abs(inp) / np.abs(inp).max(axis=0)) * np.exp(np.angle(inp) * 1j)
+    return (np.abs(inp) / (1e-12+np.abs(inp).max(axis=0))) * np.exp(np.angle(inp) * 1j)
 
 def plotppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-',label=None, mode='real',ax=None):
     # p1 = int(self.ppm2p(ppm1, len(sig)))
@@ -217,6 +220,7 @@ def plotppm(self, sig, ppm1, ppm2, rev, linewidth=0.3, linestyle='-',label=None,
     df['Frequency(ppm)'] = np.flip(x)
     g = sns.lineplot(x='Frequency(ppm)', y='Real Signal (a.u.)', data=df, linewidth=linewidth, linestyle=linestyle,label=label,ax=ax)
     plt.tick_params(axis='both', labelsize=fontsize)
+    plt.legend( fontsize=fontsize)
     if rev:
         if ax == None:
             plt.gca().invert_xaxis()

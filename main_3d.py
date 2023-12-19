@@ -2,7 +2,7 @@ import argparse
 import json
 import sys
 
-import engine as eng
+import engine_3d as eng
 
 def main(args):
     file = open('training_report.csv', 'w+')
@@ -16,8 +16,6 @@ def main(args):
             run["ens_id"] = args.ens_id
         if args.cuda != None:
             run["gpu"] = args.cuda
-        if args.cond_test != None:
-            run["cond_test"] = args.cond_test
         if run["version"] in ["1/"]:
             engine = eng . Engine(run)
             if args.mode == 'train':
@@ -28,9 +26,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json_file", required=False, type=str, help="Path to JSON file",default="runs/exp52.json")
+    parser.add_argument("--json_file", required=False, type=str, help="Path to JSON file",default="runs/patch_3d.json")
     parser.add_argument("--ens_id", required=False, type=int, help="Ensemble ID",default=None)
-    parser.add_argument("--cond_test", required=False, type=int, help="Ensemble ID", default=0)
     parser.add_argument("--mode", required=False, type=str, help="train or test",default='train')
     parser.add_argument("--cuda", required=False, type=str, help="which cuda", default='cuda:0')
     parser.add_argument("--test_path", nargs='+', required=False, type=str, help="which dataset")
@@ -39,3 +36,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
+
+# --json_file runs/ismrm.json --ens_id 0 --mode test --test_path C:\Work\nmrlab10\MRSI_fit\data\new_data\HC010_M01.npy --mask_path C:\Work\nmrlab10\MRSI_fit\data\new_data\HC010_M01_mask.npy --affine_path C:\Work\nmrlab10\MRSI_fit\data\new_data\csi_template_mod.nii

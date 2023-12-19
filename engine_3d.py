@@ -24,10 +24,10 @@ import numpy.fft as fft
 
 from utils import Jmrui, watrem
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, mean_absolute_percentage_error
-from Model import Encoder_Model
+from Model_3d import Encoder_Model
 from utils.DataLoader_MRSI import MRSI_Dataset
 from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotppm, tic, zero_fill_torch, toc, cal_snr, \
-    wighted_var, savefig, plot_basis, fillppm, safe_elementwise_division
+    wighted_var, savefig, plot_basis, fillppm
 
 fontsize = 16
 wandb.login(key="6685dc9a345d67dad1e247ea589a63d4e669c6f4")
@@ -81,8 +81,7 @@ class Engine():
                 print("couldn't read basisset")
         self.wr = parameters['wr']
         self.data_name = parameters['data_name']
-        self.numOfSig = self.basisset.shape[1]
-        print(self.numOfSig)
+        self.numOfSig = parameters['numOfSig']
         self.sigLen = parameters['sigLen']
         self.truncSigLen = parameters['truncSigLen']
         self.org_truncSigLen = self.truncSigLen
@@ -185,7 +184,7 @@ class Engine():
         else:
             y = self.dataset
 
-        self.numOfSample = y.shape[1]
+        self.numOfSample = y.shape[-1]
         y = normalize(y)
         ang = np.angle(y[1, :])
         y = y * np.exp(-1 * ang * 1j)
@@ -199,20 +198,20 @@ class Engine():
             with open(self.saving_dir + "test_" + str(self.test_nos), 'rb') as f:
                 load = np.load(f)
                 _, _, _ , indx= [load[x] for x in load]
-                y_test = y[:, indx]
-                not_indx = np.ones(y.shape[1], dtype=bool)
+                y_test = y[:, :, indx]
+                not_indx = np.ones(y.shape[-1], dtype=bool)
                 not_indx[indx] = False
-                y = y[:, not_indx]
+                y = y[:, :, not_indx]
         else:
             indx = torch.randint(self.numOfSample, (self.test_nos,))
             # subj_id = torch.arange(36,48)
             # indx = []
             # for i in subj_id:
             #     indx+=[*range(i*64,(i+1)*64)]
-            y_test =  y[0:self.truncSigLen,indx]
-            not_indx = np.ones(y.shape[1], dtype=bool)
+            y_test =  y[0:self.truncSigLen,:,indx]
+            not_indx = np.ones(y.shape[-1], dtype=bool)
             not_indx[indx] = False
-            y = y[:, not_indx]
+            y = y[:, :, not_indx]
             snrs = cal_snr(self,fft.fftshift(fft.fft(y_test, axis=0), axes=0))
             data = []
             data.append(y_test)
@@ -223,13 +222,13 @@ class Engine():
             sio.savemat(self.saving_dir + "test_" + str(self.test_nos) + "_testDB.mat",
                         {'y_test': y_test, 'snrs_t': snrs})
 
-            Jmrui.write(Jmrui.makeHeader("tesDB", np.size(y_test, 0), np.size(y_test, 1),
-                                         self.t_step * 1000, 0, 0, self.trnfreq * 1e6), y_test,
-                        self.saving_dir + self.test_name)
+            # Jmrui.write(Jmrui.makeHeader("tesDB", np.size(y_test, 0), np.size(y_test, 1),
+            #                              self.t_step * 1000, 0, 0, self.trnfreq * 1e6), y_test,
+            #             self.saving_dir + self.test_name)
 
-            Jmrui.write(Jmrui.makeHeader("basis_set", np.size(self.basisset, 0), np.size(self.basisset, 1),
-                                         self.t_step * 1000, 0, 0, self.trnfreq * 1e6), self.basisset,
-                        self.saving_dir + "basis_set")
+            # Jmrui.write(Jmrui.makeHeader("basis_set", np.size(self.basisset, 0), np.size(self.basisset, 1),
+            #                              self.t_step * 1000, 0, 0, self.trnfreq * 1e6), self.basisset,
+            #             self.saving_dir + "basis_set")
             np.save(self.saving_dir + "basis_set", self.basisset)
         self.y_test_idx = indx
 
@@ -255,21 +254,19 @@ class Engine():
         if self.pre_plot ==True:
             plt.hist(cal_snrf(self, y_f))
             plt.show()
-            plotppm(self, fft.fftshift(fft.fft((y[:, 2000]), axis=0)), 1, 8, True, linewidth=1, linestyle='-')
+            plotppm(self, fft.fftshift(fft.fft((y[:, 0, 2000]), axis=0)), 1, 8, True, linewidth=1, linestyle='-')
             plt.show()
 
-        self.numOfSample = np.shape(y)[1];
+        self.numOfSample = np.shape(y)[-1];
         y_norm = y
         del y, y_f
         self.to_tensor(y_norm)
-        del y_norm
-        del self.dataset, self.y_trun
     def to_tensor(self,y_norm):
         y_trun = y_norm[0:self.truncSigLen, :].astype('complex64')
-        self.y_trun = torch.from_numpy(y_trun[:, 0:self.numOfSample].T)
+        self.y_trun = torch.from_numpy(y_trun[:, :,0:self.numOfSample].T)
         if self.parameters["simulated"] is False:
             y_test = self.y_test[0:self.truncSigLen, :].astype('complex64')
-            self.y_test_trun = torch.from_numpy(y_test[:, 0:self.numOfSample].T)
+            self.y_test_trun = torch.from_numpy(y_test[:, :,0:self.numOfSample].T)
             # self.train = MRSI_Dataset(self.y_trun, engine=self)
             # self.val = MRSI_Dataset(self.y_test_trun, engine=self)
             self.train = TensorDataset(self.y_trun)
@@ -284,13 +281,13 @@ class Engine():
     def inputSig(self,x,p1=None,p2=None):
         if self.parameters['domain'] == 'freq':
             if self.parameters['zero_fill'][0] == True:
-                x = zero_fill_torch(self, x,1,self.parameters['zero_fill'][1])
-            x = torch.fft.fftshift(torch.fft.fft(x, dim=1), dim=1)
+                x = zero_fill_torch(self, x,-1,self.parameters['zero_fill'][1])
+            x = torch.fft.fftshift(torch.fft.fft(x, dim=-1), dim=-1)
             if p1==None and p2==None:
                 p1 = int(ppm2p(self,self.parameters['fbound'][2], (self.truncSigLen)))
                 p2 = int(ppm2p(self,self.parameters['fbound'][1], (self.truncSigLen)))
 
-            x = x[:, p1:p2]
+            x = x[:, :,p1:p2]
             if self.in_shape == 'complex':
                 return torch.cat((torch.unsqueeze(x.real, 1), torch.unsqueeze(x.imag, 1)),1)
             if self.in_shape == 'real':
@@ -808,15 +805,14 @@ class Engine():
         with torch.no_grad():
             # temp = model.forward(x)
             # dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec,ph_sig,recons_f = model.forward(x)
-            cond_ = self.parameters["cond_test"]
-            dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec, spline_coeff = model.forward(x,cond=cond_)
+            dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec, spline_coeff = model.forward(x)
             mu = enct[:, 0:enct.shape[1]]
             logvar = enct[:, enct.shape[1]:]
             _, recons_loss = [lo / len(x) for lo in
-                                     model.loss_function(dec, x, mu, logvar, mm, decoded, 0, enc, b_spline_rec,spline_coeff,cond_)]
+                                     model.loss_function(dec, x, mu, logvar, mm, decoded, 0, enc, b_spline_rec,spline_coeff)]
             # _, recons_loss = [lo / len(x) for lo in
             #                          model.loss_function(dec, x, mu, logvar, mm, decoded, 0, enc, b_spline_rec,ph_sig,recons_f)]
-        return dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec, recons_loss
+        return dec_real, enct, enc, fr, damp, ph, mm, dec, decoded, b_spline_rec,recons_loss
     # %%
     def getCRLB(self, model, x, ampl = None):
         noise = torch.std(x.T.real[-(68 + 128):-(68+1)], axis=0)
@@ -968,7 +964,7 @@ class Engine():
         # ampl = np.mean(np.asarray(encs),0)
         return ampl, ampl_var, shift, damp, ph, np.asarray(decs), encts_np[:, :, 0:self.numOfSig],epistemic_unc, aleatoric_unc, np.asarray(decodedl),np.asarray(mml)
 
-    def quantify_whole_subject(self, test_path, mask_path, affine_path,crlb=False,plot_spec=False):
+    def quantify_whole_subject(self, test_path, mask_path, affine_path,crlb=False):
         print(affine_path)
 
         sns.set_style('white')
@@ -1001,14 +997,12 @@ class Engine():
             y_test_np = normalize(y_test_np.T)
             ang = np.angle(y_test_np[1, :])
             y_test_np = y_test_np * np.exp(-1 * ang * 1j)
-            self = tic(self)
             y_test = torch.from_numpy(y_test_np.T[:,0:self.org_truncSigLen])
-            print(y_test.device)
             print(y_test.size())
             rslt = self.predict_ensembles(
                 y_test, mean_=False)
 
-
+            tic(self)
             ampl, mean_, shift, damp, ph, decs, encs, epistemic_unc, aleatoric_unc, decoded_net, mm_,spline,loss,crlbs = self.process_ens(*rslt)
             toc(self,'test_time')
 
@@ -1027,11 +1021,10 @@ class Engine():
             crlb_unc_resh = np.zeros(((nx,ny,nz,crlbs.shape[-1])))
             crlb_unc_resh[mask.astype(bool),:] = crlbs.mean(0)
 
-            fig, axs = plt.subplots(4,4, figsize=(8,8))
-            id_div_cr = self.met_name.index('Cr')
-            # id_div_pcr = self.met_name.index('')
+            fig, axs = plt.subplots(2,4, figsize=(8,4))
+
             for i, ax in enumerate(axs.flatten()):
-                ratio = safe_elementwise_division(ampl_resh[:, :, 16, i].T , (ampl_resh[:, :, 16, id_div_cr].T))
+                ratio = ampl_resh[:, :, 16, i].T / ampl_resh[:, :, 16, 0].T
                 ratio[ratio>2]=0
                 ax.imshow(ratio)
                 ax.set_title(f'{self.met_name[i]}/[Cr+PCr]')
@@ -1040,15 +1033,13 @@ class Engine():
 
             for i, name in enumerate(self.met_name):
                 # Create a NIfTI image from the data array
-                # ratio = safe_elementwise_division(ampl_resh[:, :, :, i] , (ampl_resh[:, :, :, id_div_cr]))
-                # ratio[ratio > 10] = 0
-                nifti_image = nib.Nifti1Image(np.expand_dims(ampl_resh[:, :, :, i], 3),
-                                              affine=affine)
-                # if i==id_div_cr:
-                #     nifti_image = nib.Nifti1Image(np.expand_dims(ampl_resh[:, :, :, i], 3),
-                #                                   affine=affine)
-                # else:
-                #     nifti_image = nib.Nifti1Image(np.expand_dims(ratio,3), affine=affine)
+                ratio = ampl_resh[:,:,:,i]/ampl_resh[:,:,:,0]
+                ratio[ratio > 2] = 0
+                if i==0:
+                    nifti_image = nib.Nifti1Image(np.expand_dims(ampl_resh[:, :, :, i], 3),
+                                                  affine=affine)
+                else:
+                    nifti_image = nib.Nifti1Image(np.expand_dims(ratio,3), affine=affine)
                 output_file = self.saving_dir+path + f"{name}.nii.gz"  # Replace with your desired output file path
                 nib.save(nifti_image, output_file)
             for i, name in enumerate(self.met_name):
@@ -1071,99 +1062,93 @@ class Engine():
                 output_file = self.saving_dir + path + f"{name}_crlb_unc.nii.gz"  # Replace with your desired output file path
                 nib.save(nifti_image, output_file)
 
-            if plot_spec:
-                sns.set_palette('Set2')
-                sns.set_style('white')
 
-                self.p1 = int(ppm2p(self,self.parameters['fbound'][2], (self.truncSigLen)))
-                self.p2 = int(ppm2p(self,self.parameters['fbound'][1], (self.truncSigLen)))
-                self.in_size = int(self.p2 - self.p1)
+            sns.set_palette('Set2')
+            sns.set_style('white')
 
-                rec_sig = zero_fill_torch(self,torch.from_numpy(decs), 2,
-                                               self.parameters['zero_fill'][1]).cpu().detach()
-                y_test_ = zero_fill_torch(self,y_test, 1, self.parameters['zero_fill'][1]).cpu().detach()
+            self.p1 = int(ppm2p(self,self.parameters['fbound'][2], (self.truncSigLen)))
+            self.p2 = int(ppm2p(self,self.parameters['fbound'][1], (self.truncSigLen)))
+            self.in_size = int(self.p2 - self.p1)
 
-                y_out_f = fft.fftshift(fft.fft(rec_sig, axis=2),axes=2)
-                # y_out_f_mean = y_out_f.mean(0,keepdims=True)
-                y_out_f_mean = np.average(y_out_f,0, keepdims=True, weights= self.parameters['ens_weights'][0:self.ens])
-                spline_mean = np.average(spline, 0, keepdims=False, weights=self.parameters['ens_weights'][0:self.ens])
-                # y_out_f_sd = y_out_f.std(0, keepdims=True)
-                y_out_f_sd = wighted_var(self,y_out_f,self.parameters['ens_weights'][0:self.ens],keepdims=True)**0.5
-                spline_mean_sd = wighted_var(self,spline, self.parameters['ens_weights'][0:self.ens], keepdims=False)**0.5
-                snr = cal_snrf(self,fft.fftshift(fft.fft(y_test_np.T,axis=1),axes=1),range=[2.5,3.5])
-                rang = [1.8, 3.8]
-                indic = list(range(len(y_test[:, 0])))
-                indic.sort(key=lambda x: snr[x], reverse=False)
-                # indic = np.random.randint(0,(y_test_np.shape[1]),20)
-                indic = [12114,12000,7461,13609,12005,62,6042,12458,15732,14018,9965,8223,15184,5458,14558,11586,11119,15075,7228,16825]
+            rec_sig = zero_fill_torch(self,torch.from_numpy(decs), 2,
+                                           self.parameters['zero_fill'][1]).cpu().detach()
+            y_test_ = zero_fill_torch(self,y_test, 1, self.parameters['zero_fill'][1]).cpu().detach()
 
-                for ll in range(0,12):
+            y_out_f = fft.fftshift(fft.fft(rec_sig, axis=2),axes=2)
+            # y_out_f_mean = y_out_f.mean(0,keepdims=True)
+            y_out_f_mean = np.average(y_out_f,0, keepdims=True, weights= self.parameters['ens_weights'][0:self.ens])
+            spline_mean = np.average(spline, 0, keepdims=False, weights=self.parameters['ens_weights'][0:self.ens])
+            # y_out_f_sd = y_out_f.std(0, keepdims=True)
+            y_out_f_sd = wighted_var(self,y_out_f,self.parameters['ens_weights'][0:self.ens],keepdims=True)**0.5
+            spline_mean_sd = wighted_var(self,spline, self.parameters['ens_weights'][0:self.ens], keepdims=False)**0.5
+            snr = cal_snrf(self,fft.fftshift(fft.fft(y_test_np.T,axis=1),axes=1),range=[2.5,3.5])
+            rang = [1.8, 4]
+            indic = list(range(len(y_test[:, 0])))
+            indic.sort(key=lambda x: snr[x], reverse=False)
+            # indic = np.random.randint(0,(y_test_np.shape[1]),20)
+            indic = [12114,12000,7461,13609,12005,62,6042,12458,15732,14018,9965,8223,15184,5458,14558,11586,11119,15075,7228,16825]
+            for ll in range(0,12):
+                id = indic[ll]
+                sd_f = 2
+                plotppm(self,np.fft.fftshift(np.fft.fft((y_test_[ id,:])).T)[self.p1:self.p2], rang[0], rang[1], False,
+                             linewidth=0.3, linestyle='-',label='signal')
+                plotppm(self,y_out_f_mean[0,id, self.p1:self.p2]+spline_mean[id,:], rang[0],
+                    rang[1], False, linewidth=1, linestyle='-', label='Fit')
+                plotppm(self,spline_mean[id,:], rang[0],
+                    rang[1], False, linewidth=1, linestyle='-', label='Spline')
 
-                    id = indic[ll]
-                    sd_f = 2
-                    plotppm(self,np.fft.fftshift(np.fft.fft((y_test_[ id,:])).T)[int(ppm2p(self,5, (self.truncSigLen))):
-                                                                                 int(ppm2p(self,1, (self.truncSigLen)))], 1, 5, True,
-                                 linewidth=2, linestyle='-',label='Signal')
-                    savefig(self,path +str(ll)+"_whole")
-                    plotppm(self,np.fft.fftshift(np.fft.fft((y_test_[ id,:])).T)[self.p1:self.p2], rang[0], rang[1], False,
-                                 linewidth=2, linestyle='-',label='Signal')
-                    plotppm(self,y_out_f_mean[0,id, self.p1:self.p2]+spline_mean[id,:], rang[0],
-                        rang[1], False, linewidth=2, linestyle='-', label='Fit')
-                    plotppm(self,spline_mean[id,:], rang[0],
-                        rang[1], False, linewidth=2, linestyle='-', label='Spline')
+                if self.ens>1:
+                    fillppm(self,np.expand_dims(spline_mean[id,:]+y_out_f_mean[0,id, self.p1:self.p2] - sd_f * (y_out_f_sd[0,id, self.p1:self.p2]+spline_mean_sd[id,:]),axis=1),
+                                 np.expand_dims(spline_mean[id,:]+y_out_f_mean[0,id, self.p1:self.p2] + sd_f * (y_out_f_sd[0,id, self.p1:self.p2]++spline_mean_sd[id,:]),axis=1),
+                                                rang[0],rang[1], False, alpha=.1,color='orange')
+                if self.ens>1:
+                    fillppm(self,np.expand_dims(spline_mean[id,:] - sd_f * (spline_mean_sd[id,:]),axis=1),
+                                 np.expand_dims(spline_mean[id,:]+ sd_f * (+spline_mean_sd[id,:]),axis=1),
+                                                rang[0],rang[1], False, alpha=.1,color='blue')
+                plotppm(self,
+                    np.fft.fftshift(np.fft.fft((y_test_[id,:])))[self.p1:self.p2]
+                    -spline_mean[id,:]  - y_out_f_mean[0,id, self.p1:self.p2],
+                             rang[0], rang[1],
+                             True, linewidth=1, linestyle='-',label='residual')
+                sns.despine()
 
-                    if self.ens>1:
-                        fillppm(self,np.expand_dims(spline_mean[id,:]+y_out_f_mean[0,id, self.p1:self.p2] - sd_f * (y_out_f_sd[0,id, self.p1:self.p2]+spline_mean_sd[id,:]),axis=1),
-                                     np.expand_dims(spline_mean[id,:]+y_out_f_mean[0,id, self.p1:self.p2] + sd_f * (y_out_f_sd[0,id, self.p1:self.p2]++spline_mean_sd[id,:]),axis=1),
-                                                    rang[0],rang[1], False, alpha=.1,color='orange')
-                    if self.ens>1:
-                        fillppm(self,np.expand_dims(spline_mean[id,:] - sd_f * (spline_mean_sd[id,:]),axis=1),
-                                     np.expand_dims(spline_mean[id,:]+ sd_f * (+spline_mean_sd[id,:]),axis=1),
-                                                    rang[0],rang[1], False, alpha=.1,color='blue')
-                    plotppm(self,
-                        np.fft.fftshift(np.fft.fft((y_test_[id,:])))[self.p1:self.p2]
-                        -spline_mean[id,:]  - y_out_f_mean[0,id, self.p1:self.p2],
-                                 rang[0], rang[1],
-                                 True, linewidth=1, linestyle='-',label='Residual')
-                    sns.despine()
+                savefig(self,path +str(ll)+"_tstasig")
 
-                    savefig(self,path +str(ll)+"_tstasig")
+                plot_basis(self,10*np.expand_dims(ampl[id, :],axis=0), shift[0,id, :],
+                                damp[0,id, :],
+                                ph[0,id, :], rng=[1,5])
+                savefig(self,path + str(ll) + "basis")
 
-                    plot_basis(self,10*np.expand_dims(ampl[id, :],axis=0), shift[0,id, :],
-                                    damp[0,id, :],
-                                    ph[0,id, :], rng=[1,5])
-                    savefig(self,path + str(ll) + "basis")
+                # if self.parameters['spline']:
+                #     y_test_ = (y_test[id, :]).unsqueeze(0)
+                #     y_test_ = self.zero_fill_torch(y_test_, 1, self.parameters['zero_fill'][1]).cpu().detach()
+                #     plt.plot(torch.fft.fftshift(torch.fft.fft((y_test_)).T)[self.p1:self.p2])
+                #     rec_sig = self.zero_fill_torch(torch.from_numpy(decs.mean()[0, id]).unsqueeze(0), 1,
+                #                                    self.parameters['zero_fill'][1]).cpu().detach()
+                #     plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline[:,id].T)
+                #     plt.plot(1+torch.fft.fftshift(torch.fft.fft((rec_sig-y_test_)).T)[self.p1:self.p2] + spline[:,id].T)
+                #     plt.plot(spline[0,id])
+                #     self.savefig(path + str(ll) + "result")
 
-                    # if self.parameters['spline']:
-                    #     y_test_ = (y_test[id, :]).unsqueeze(0)
-                    #     y_test_ = self.zero_fill_torch(y_test_, 1, self.parameters['zero_fill'][1]).cpu().detach()
-                    #     plt.plot(torch.fft.fftshift(torch.fft.fft((y_test_)).T)[self.p1:self.p2])
-                    #     rec_sig = self.zero_fill_torch(torch.from_numpy(decs.mean()[0, id]).unsqueeze(0), 1,
-                    #                                    self.parameters['zero_fill'][1]).cpu().detach()
-                    #     plt.plot(torch.fft.fftshift(torch.fft.fft((rec_sig)).T)[self.p1:self.p2] + spline[:,id].T)
-                    #     plt.plot(1+torch.fft.fftshift(torch.fft.fft((rec_sig-y_test_)).T)[self.p1:self.p2] + spline[:,id].T)
-                    #     plt.plot(spline[0,id])
-                    #     self.savefig(path + str(ll) + "result")
+            y_pred_trunc_f = np.zeros((self.ens,nx,ny,nz,self.in_size))
+            y_true_trunc_f = np.zeros((nx, ny, nz, self.in_size))
+            splines = np.zeros((self.ens,nx, ny, nz, self.in_size))
+            y_pred_trunc_f[:,mask.astype(bool),:] = torch.fft.fftshift(torch.fft.fft(rec_sig,dim=2),dim=2)[:,:,self.p1:self.p2] + spline
+            y_true_trunc_f[mask.astype(bool),:] = torch.fft.fftshift(torch.fft.fft(y_test_,dim=1),dim=1)[:,self.p1:self.p2]
+            splines[:,mask.astype(bool),:] = spline
 
-                y_pred_trunc_f = np.zeros((self.ens,nx,ny,nz,self.in_size))
-                y_true_trunc_f = np.zeros((nx, ny, nz, self.in_size))
-                splines = np.zeros((self.ens,nx, ny, nz, self.in_size))
-                y_pred_trunc_f[:,mask.astype(bool),:] = torch.fft.fftshift(torch.fft.fft(rec_sig,dim=2),dim=2)[:,:,self.p1:self.p2] + spline
-                y_true_trunc_f[mask.astype(bool),:] = torch.fft.fftshift(torch.fft.fft(y_test_,dim=1),dim=1)[:,self.p1:self.p2]
-                splines[:,mask.astype(bool),:] = spline
+            # sio.savemat(self.saving_dir + path + 'rslt_spectra.mat', {
+            #     "y_pred_trunc_f" : y_pred_trunc_f,
+            #     "y_true_trunc_f" : y_true_trunc_f,
+            #     "spline" : splines,
+            # })
 
-                # sio.savemat(self.saving_dir + path + 'rslt_spectra.mat', {
-                #     "y_pred_trunc_f" : y_pred_trunc_f,
-                #     "y_true_trunc_f" : y_true_trunc_f,
-                #     "spline" : splines,
-                # })
-
-                sio.savemat(self.saving_dir + path + 'rslt_map.mat', {
-                    "mask" : mask,
-                    "metabolite_map": ampl_resh,
-                    "uncertainty_map": epistemic_unc_resh,
-                    "metabolite_name": self.met_name
-                })
+            sio.savemat(self.saving_dir + path + 'rslt_map.mat', {
+                "mask" : mask,
+                "metabolite_map": ampl_resh,
+                "uncertainty_map": epistemic_unc_resh,
+                "metabolite_name": self.met_name
+            })
 
     def quantify(self, crlb=False):
         sns.set_style('white')
@@ -1323,7 +1308,6 @@ class Engine():
         for i in enc_list:
             self.epoch_dir = self.epoch_dir + str(i)+'/'
             Path(self.saving_dir + self.epoch_dir).mkdir(parents=True, exist_ok=True)
-            device = torch.device(self.parameters['gpu'])
             if i==0:
                 dataloader_train = DataLoader(self.train, batch_size=self.batchsize, shuffle=True, pin_memory=True,
                            num_workers=self.num_of_workers)
@@ -1352,10 +1336,10 @@ class Engine():
             # trainer= pl.Trainer(gpus=1, max_epochs=self.max_epoch, logger=logger,callbacks=[lr_monitor])
             logger.save()
 
-
+            device = torch.device(self.parameters['gpu'])
             temp = Encoder_Model(self.depths[i], self.betas[i],self.reg_wei[i],i,self).to(device)
             if self.parameters["transfer_model_dir"] is not None:
-                PATH = self.parameters["transfer_model_dir"] + "model_gpu_" + str(i) + ".pt"
+                PATH = self.parameters["transfer_model_dir"] + "model_" + str(i) + ".pt"
                 temp.load_state_dict(torch.load(PATH, map_location=device))
                 # temp.cuda()
             try:
@@ -1369,33 +1353,15 @@ class Engine():
 
             trainer.fit(temp, dataloader_train, dataloader_test)
             autoencoders.append(temp)
-            PATH = self.saving_dir + "model_gpu_"+ str(i) + ".pt"
+            PATH = self.saving_dir + "model_"+ str(i) + ".pt"
             # Save
             torch.save(temp.state_dict(), PATH)
-
-            PATH = self.saving_dir + "model_cpu_"+ str(i) + ".pt"
-            # Save
-            torch.save(temp.to('cpu').state_dict(), PATH)
             del temp
             del trainer
             gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.memory_summary(device=device, abbreviated=False)
         toc(self,"trining_time")
-
-    def inference(self, test_path,mask_path,affine_path):
-        print("evaluation")
-        self.autoencoders = []
-        for i in range(0, self.ens):
-            device = torch.device(self.parameters['gpu'])
-            # device = torch.device('cpu')
-            model = Encoder_Model(self.depths[i], self.betas[i],self.reg_wei[i],i,self).to(device)
-            PATH = self.saving_dir + "model_cpu_" + str(i) + ".pt"
-            model.load_state_dict(torch.load(PATH, map_location=device))
-            model.to(device=device)
-            model.eval()
-            self.autoencoders.append(model)
-        self.quantify_whole_subject(test_path,mask_path,affine_path, plot_spec=False)
     def dotest(self, test_path,mask_path,affine_path):
         print("evaluation")
         self.autoencoders = []
@@ -1403,7 +1369,7 @@ class Engine():
             device = torch.device(self.parameters['gpu'])
             # device = torch.device('cpu')
             model = Encoder_Model(self.depths[i], self.betas[i],self.reg_wei[i],i,self)
-            PATH = self.saving_dir + "model_gpu_" + str(i) + ".pt"
+            PATH = self.saving_dir + "model_" + str(i) + ".pt"
             model.load_state_dict(torch.load(PATH, map_location=device))
             model.to(device=device)
             model.eval()
@@ -1417,7 +1383,7 @@ class Engine():
 
         if self.parameters["simulated"] == False:
             # self.quantify(crlb=False)
-            self.quantify_whole_subject(test_path,mask_path,affine_path,plot_spec=True)
+            self.quantify_whole_subject(test_path,mask_path,affine_path)
         else:
             self.ensemble = True
             if self.ens == 1:
