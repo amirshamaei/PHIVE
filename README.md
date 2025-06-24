@@ -19,8 +19,10 @@ PHIVE is a deep learning framework for the ultrafast quantification of Magnetic 
 
 The PHIVE model consists of a convolutional encoder that maps an input spectrum into a low-dimensional latent space. A physics-informed decoder then uses parameters from this latent space to reconstruct the spectrum based on a known spectral model, including a basis set of metabolites and a flexible spline baseline.
 
-![PHIVE Architecture](https://imgur.com/a/lbDJ8gZ)
+![Picture1](https://github.com/user-attachments/assets/233762f6-6cba-420f-9499-e040dd4be9ea)
 *Fig 1: Overview of the PHIVE architecture and its application during inference.*
+
+
 
 ---
 
