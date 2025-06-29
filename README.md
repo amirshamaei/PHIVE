@@ -1,14 +1,17 @@
-# MRSI_fit: Deep Learning-based MRSI Spectral Fitting
+# PHIVE: Physics-Informed Variational Encoder for Rapid MRSI Fitting
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-1.8+-red.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+**License: MIT**
 
-A deep learning framework for automated quantification of metabolites from Magnetic Resonance Spectroscopic Imaging (MRSI) data using variational autoencoders.
+This repository contains the PyTorch implementation for the paper:
+
+**PHIVE: A Physics-Informed Variational Encoder Enables Rapid Spectral Fitting of Brain Metabolite Mapping at 7T**  
+Amirmohammad Shamaei, Amir Bucha, Eva Niess, Lukas Hingerl, Bernhard Strasser, Aaron Osburg, Korbinian Eckstein, Wolfgang Bogner, Stanislav Motyka
+
+PHIVE is a deep learning framework for the ultrafast quantification of Magnetic Resonance Spectroscopic Imaging (MRSI) data. It integrates a physics-based spectral model into a variational autoencoder (VAE) architecture to achieve highly accelerated, accurate, and robust metabolite mapping.
 
 ## Overview
 
-MRSI_fit is a comprehensive deep learning solution for MRSI spectral fitting that addresses the challenges of automated metabolite quantification in magnetic resonance spectroscopy. The framework uses a variational autoencoder (VAE) architecture to learn the complex relationships between spectral data and metabolite concentrations.
+PHIVE is a comprehensive deep learning solution for MRSI spectral fitting that addresses the challenges of automated metabolite quantification in magnetic resonance spectroscopy. The framework uses a variational autoencoder (VAE) architecture to learn the complex relationships between spectral data and metabolite concentrations.
 
 ### Key Features
 
@@ -35,8 +38,8 @@ MRSI_fit is a comprehensive deep learning solution for MRSI spectral fitting tha
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/MRSI_fit.git
-cd MRSI_fit
+git clone https://github.com/yourusername/PHIVE.git
+cd PHIVE
 ```
 
 2. Install dependencies:
@@ -184,7 +187,7 @@ engine.dotest(
 ## File Structure
 
 ```
-MRSI_fit/
+PHIVE/
 ├── main.py                 # Main training/testing script
 ├── engine.py              # Training engine
 ├── Model.py               # Neural network model
@@ -198,40 +201,28 @@ MRSI_fit/
 ├── runs/                  # Configuration files
 ├── experiments/           # Experiment results
 ├── data/                  # Data directory
-└── reserved files/        # Archived files (3D versions, etc.)
 ```
 
-[//]: # ()
-[//]: # (## Citation)
+## Citation
 
-[//]: # ()
-[//]: # (If you use this code in your research, please cite:)
+If you use this code in your research, please cite our paper:
 
-[//]: # ()
-[//]: # (```bibtex)
-
-[//]: # (@article{mrsifit2024,)
-
-[//]: # (  title={Deep Learning-based MRSI Spectral Fitting: A Variational Autoencoder Approach},)
-
-[//]: # (  author={Your Name},)
-
-[//]: # (  journal={Journal Name},)
-
-[//]: # (  year={2024})
-
-[//]: # (})
-
-
-[//]: # (```)
-
-## Contributing
-
-We welcome contributions! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+```bibtex
+@article{shamaei2024phive,
+  title={PHIVE: A Physics-Informed Variational Encoder Enables Rapid Spectral Fitting of Brain Metabolite Mapping at 7T},
+  author={Shamaei, Amirmohammad and Bucha, Amir and Niess, Eva and Hingerl, Lukas and Strasser, Bernhard and Osburg, Aaron and Eckstein, Korbinian and Bogner, Wolfgang and Motyka, Stanislav},
+  journal={[Journal Name]},
+  year={2024}
+}
+```
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
 ## Acknowledgments
 
