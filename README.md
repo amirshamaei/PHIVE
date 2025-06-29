@@ -1,7 +1,5 @@
 # PHIVE: Physics-Informed Variational Encoder for Rapid MRSI Fitting
 
-**License: MIT**
-
 This repository contains the PyTorch implementation for the paper:
 
 **PHIVE: A Physics-Informed Variational Encoder Enables Rapid Spectral Fitting of Brain Metabolite Mapping at 7T**  
