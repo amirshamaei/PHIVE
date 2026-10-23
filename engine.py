@@ -55,7 +55,7 @@ from utils.utils import plot_MM, normalize, Gauss, Lornz, ppm2p, cal_snrf, plotp
     wighted_var, savefig, plot_basis, fillppm, safe_elementwise_division
 
 fontsize = 16
-wandb.login(key="6685dc9a345d67dad1e247ea589a63d4e669c6f4")
+wandb.login(key="")
 
 class Engine():
     """
